@@ -4,9 +4,11 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <limits>
 
 std::vector<std::string> &split(const std::string &s, char delim, std::vector<std::string> &elems);
 std::vector<std::string> split(const std::string &s, char delim);
+void do_floyd_warshall(int dim, int* a_flat);
 
 int main(int argc, char* argv[]) {
 	if(argc<2) {
@@ -19,12 +21,12 @@ int main(int argc, char* argv[]) {
 
 	// Just to count the number of lines.
 	std::ifstream data_file_count (argv[1]);
-	int node_count = std::count(std::istreambuf_iterator<char>(data_file_count), std::istreambuf_iterator<char>(), '\n');
+	int v_count = std::count(std::istreambuf_iterator<char>(data_file_count), std::istreambuf_iterator<char>(), '\n');
 	data_file_count.close();
 
 	int i=0;
-	std::vector<std::string> file_by_line[node_count];
-	std::string names[node_count];
+	std::vector<std::string> file_by_line[v_count];
+	std::string names[v_count];
         std::vector<std::string> temp;
 
 	// Store names, load up the split vectors.
@@ -45,16 +47,52 @@ int main(int argc, char* argv[]) {
 	}
 
 	// Finally, build the adjacency matrix.
-	int adj_matrix[node_count][node_count];
-	for(int i=0; i<node_count; i++) {
-		for(int j=0; j<node_count; j++) {
-			adj_matrix[i][j] = atoi( file_by_line[i][j].c_str() );
-                        std::cout << adj_matrix[i][j] << " ";
+	int adj_matrix[v_count*v_count];
+	for(int i=0; i<v_count; i++) {
+		for(int j=0; j<v_count; j++) {
+			adj_matrix[i*v_count+j] = atoi( file_by_line[i][j].c_str() );
+                        std::cout << adj_matrix[i*v_count+j] << " ";
+		}
+		std::cout << std::endl;
+	}
+
+	std::cout << "--------------------" << std::endl;
+
+	int dist[v_count*v_count];
+	for(int i=0; i<v_count; i++) {
+		for(int j=0; j<v_count; j++) {
+			if(adj_matrix[i*v_count+j] == 0 && i!=j) {
+				dist[i*v_count+j] = std::numeric_limits<int>::max();
+			}
+			else {
+				dist[i*v_count+j] = adj_matrix[i*v_count+j];
+			}
+		}
+	}
+
+	do_floyd_warshall(v_count, dist);
+
+	for(int i=0; i<v_count; i++) {
+		for(int j=0; j<v_count; j++) {
+			std::cout << dist[i*v_count+j] << " ";
 		}
 		std::cout << std::endl;
 	}
 
 	return 0;
+}
+
+void do_floyd_warshall(int d, int* a) {
+	for(int i=0; i<d; i++)
+		for(int j=0; j<d; j++)
+			for(int k=0; k<d; k++) {
+				int comp = a[i*d+k] + a[k*d+j];
+				if(a[i*d+j] > comp && comp >= 0) { 
+					a[i*d+j] = a[i*d+k] + a[k*d+j];
+					//std::cout << a[i*d+j] << " ";
+				}
+			}
+	return;
 }
 
 // Found these split methods on Stack Overflow. Nice.
