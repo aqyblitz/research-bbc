@@ -1,15 +1,13 @@
 #include "Node.h"
 
-class Node {
-
 	Node::Node(int node_id, int n, int* adj_temp_sublist) {
 		id = node_id;
 		v_count = n;
 		adj_sublist = adj_temp_sublist;
-		bcast_node = null;
+		bcast_node = NULL;
 		ack = 0;
 		filtered = false;
-		rows = adj_temp_sublist.size()/n;
+		rows = sizeof(adj_temp_sublist)/n;
 		end = false;
 
 		start_threads();
@@ -18,7 +16,7 @@ class Node {
 	Node::~Node() {
 	}
 
-	void Node::start_threads();
+	void Node::start_threads() {
 		std::thread receive_complete (receive_complete_signal);
 		std::thread receive (recieve_thread_impl);
 		std::thread broadcast (broadcast_row_thread);
@@ -41,8 +39,8 @@ class Node {
 		while(true) {
 			if(this == bcast_node) {
 				if(ack == v_count-1) {
-					cast_row = null;
-					bcast_node = null;
+					cast_row = NULL;
+					bcast_node = NULL;;
 					ack = 0;
 
 					if(pos == v_count-1) {
@@ -57,9 +55,9 @@ class Node {
 		while(true) {
 			while(cast_row) {
 				this.relax();
-				boost::mutex::scoped_lock lock(ack_mutex);
+				ack_mutex.lock();
 				ack++;
-				boost::mutex::scoped_lock unlock(ack_mutex);
+				ack_mutex.unlock();
 				while(ack != 0) {}
 				
 			}
@@ -105,4 +103,3 @@ class Node {
 		return adj_sublist;
 	}
 
-}

@@ -1,18 +1,17 @@
 #ifndef NODE_H
 #define NODE_H
 
-class Node;
-
 #include <iostream>
 #include <vector>
 #include <thread>
-#include <boost>
+#include <mutex>
+#include <cstdlib>
 
 class Node {
 	static int pos;
 	static int* cast_row;
 	static Node* bcast_node;
-	static boost::mutex ack_mutex;
+	static std::mutex ack_mutex;
 	static int ack;
 	static bool end;
 	public:
@@ -33,4 +32,6 @@ class Node {
 		bool filtered;
 		int* adj_sublist;
 		int v_count;
-}
+};
+
+#endif
