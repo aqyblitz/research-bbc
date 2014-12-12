@@ -42,11 +42,11 @@ crcgen::~crcgen()
 /*
 * Check this against 12345689: 0xCBF43926
 */
-crc crcgen::crc_compute(unsigned char const message[], int nBytes)
+crc crcgen::crc_compute(unsigned char const message[], int nBytes, uint32_t init_remainder /* = INITIAL_REMAINDER */)
 {
     //int n_blocks = nBytes/8;
 
-    crc remainder = INITIAL_REMAINDER;
+    crc remainder = init_remainder;
     unsigned char data;
 	int byte;
 
@@ -61,7 +61,7 @@ crc crcgen::crc_compute(unsigned char const message[], int nBytes)
 } /* crc_compute() */
 
 /*
- * This makes some assumption about the data (namely that it doesn't exceed 16*8=128 bits. So keep that in mind.
+ * This makes some assumption about the data (namely that it doesn't exceed 16*8=128 bits). So keep that in mind.
  */
 uint32_t crcgen::reflect(uint32_t data, uint8_t nBits)
 {

@@ -14,7 +14,7 @@ class crcgen
     public:
         crcgen();
         ~crcgen();
-        crc crc_compute(unsigned char const message[], int nBytes);
+        crc crc_compute(unsigned char const message[], int nBytes, uint32_t init_remainder=INITIAL_REMAINDER);
     private:
         int crcTable[256];
         uint32_t reflect(uint32_t data, uint8_t nBits);
