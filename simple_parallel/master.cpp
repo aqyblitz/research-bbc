@@ -18,6 +18,14 @@
 #define PORT 8888
 
 /*
+ * TODO: Pipe to logs.
+ * Logs should be adapted to become more verbose; I'll try to match certain "states" to the diagram.
+ * It should be noted that clearing the socket file descriptor table constantly is probably a bad idea. It's either a miracle that my stuff works or the guys over at MITRE don't know exactly what's going on right now.
+ * For now, it's been suggested that I migrate the clearing code to outside of the large loops. The issue that's generated is that IF some client attempts to connect to this server while the logs are being cleared (or before?), then the connection is lost. Should look a little more into this.
+ * Should be noted that on k=1 (reproducible bug running on this environment) results in a failed connection to slave ID 1 on a 2-block, 4-vertex, 1-redundancy multiplier input. This should be fairly important to diagnose.
+ * Diagnose the "extra slave node" problem. Honestly shouldn't be there.
+ */
+/*
   FD_ZERO - Clear an fd_set
   FD_ISSET - Check if a descriptor is in an fd_set
   FD_SET - Add a descriptor to an fd_set
@@ -142,15 +150,15 @@ int main(int argc, char *argv[])
     addrlen = sizeof(address);
     puts("Waiting for connections ...");
 
+    //clear the socket set
+    FD_ZERO(&readfds);
+
+    //add master socket to set
+    FD_SET(master_socket, &readfds);
+    max_sd = master_socket;
+
     while(slave_count < block_total+1)
     {
-        //clear the socket set
-        FD_ZERO(&readfds);
-
-        //add master socket to set
-        FD_SET(master_socket, &readfds);
-        max_sd = master_socket;
-
         //add child sockets to set
         for ( i = 0 ; i < max_clients ; i++)
         {
@@ -241,6 +249,8 @@ int main(int argc, char *argv[])
         }
     }
 
+
+	 // TODO: ...is this necessary? I know it resolved some bugs earlier, but I should look into this.
     //clear the socket set
     FD_ZERO(&readfds);
 
@@ -279,6 +289,7 @@ int main(int argc, char *argv[])
         if(FD_ISSET(sd, &readfds))
         {
             // Command 0 sent (request row)
+				printf("Requesting row %d from slave ID=%d",k,k/block_size);
             if( send(sd, &req, sizeof(int32_t)*size_req, 0) != sizeof(int32_t)*size_req )
             {
                 perror("send");
@@ -293,7 +304,8 @@ int main(int argc, char *argv[])
         {
             printf("Sending row_k to slave ID: %d\n",j);
             sd = client_socket[j];
-            if(FD_ISSET(sd, &readfds))
+				int sock_code = FD_ISSET(sd, &readfds);
+            if(sock_code)
             {
                 printf("Command %d: k=%d\n",req[0],req[1]);
                 req[0] = 1;
@@ -311,6 +323,9 @@ int main(int argc, char *argv[])
                 //read(sd, &ack_id, sizeof(int32_t));
                 //printf("%d %d",ack_id, cc);
             }
+				else {
+					printf("Socket ID %d not valid connection | %d\n",j,sock_code);
+				}
         }
 
         puts("Initializing boolean array");
@@ -363,7 +378,7 @@ int main(int argc, char *argv[])
                 sd = client_socket[j];
                 if(ack_arr[j] == 0 && FD_ISSET(sd, &readfds))
                 {
-                    printf("SLAVE_SOCKET %d\n",j);
+                    printf("Socket Activity: Slave id=%d\n",j);
                     t = read(sd, &ack_id, sizeof(int32_t));
                     if(t>0)
                     {
@@ -390,6 +405,7 @@ int main(int argc, char *argv[])
         if(FD_ISSET(sd, &readfds))
         {
             // Command 0 sent (request row)
+				puts("Requesting processed data from slave nodes ...");
             if( send(sd, &req, sizeof(int32_t)*size_req, 0) != sizeof(int32_t)*size_req )
             {
                 perror("send");
@@ -410,7 +426,8 @@ int main(int argc, char *argv[])
         sd=client_socket[i];
         close(sd);
     }
-
+	
+	 puts("Deinfinitizing the solution ...");
     for(int x=0;x<solution.size();x++)
     {
         if(solution[x]==1000)
