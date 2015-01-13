@@ -22,6 +22,7 @@ int main(int argc, char *argv[])
     int sockfd, portno, n;
     struct sockaddr_in serv_addr;
     struct hostent *server;
+    int k = 0;
 
     char buffer[256];
     if (argc < 3) {
@@ -62,13 +63,15 @@ int main(int argc, char *argv[])
     bzero(buffer,256);
     */
 
-    int32_t sizes[2];
+    int size_sizes = 4;
+    int32_t sizes[size_sizes];
 
-    n = read(sockfd,sizes,2*sizeof(int32_t));
+    n = read(sockfd,sizes,size_sizes*sizeof(int32_t));
     if (n < 0)
          error("ERROR reading from socket");
-    for(int i=0; i<2; i++)
+    for(int i=0; i<size_sizes; i++)
         printf("%d ",sizes[i]);
+    puts("");
 
     // size = # of vertices (elements per row) TIMES the number of rows = total length of vector
     vector<int32_t> adj_block(sizes[1]/sizeof(int32_t));
@@ -76,14 +79,57 @@ int main(int argc, char *argv[])
     n = read(sockfd,&adj_block[0],sizes[1]*sizeof(int32_t));
     if (n < 0)
          error("ERROR reading from socket");
+    int vertex_total = sizes[0];
+    int id = sizes[2];
+    int block_total = sizes[3];
 
     for(int i=0; i<adj_block.size(); i++)
     {
-        if(i%sizes[0]==0 && i!=0)
-            puts("\n");
+        //(adj_block[i] == 0 )
+        //    adj_block[i] = vertex_total+1; // unweighted graphs only, n+1
+        if(i%vertex_total==0 && i!=0)
+            puts("");
         printf("%d ",adj_block[i]);
     }
+    puts("");
 
+    while(true)
+    {
+        int size_req = 2;
+        int req[size_req];
+        puts("why won't you love me");
+        n = read(sockfd,&req,size_req*sizeof(int32_t));
+        printf("Bytes read:%d Command:%d\n",n,req[0]);
+        k = req[1];
+        if(req[0]==0)
+        {
+            int send_size = vertex_total*sizeof(int32_t);
+            puts("Hello world");
+            /*
+             * vertex_total * row_index
+             *                row_index = k % (rows in a block)
+             *                                (rows in a block) = vertex_total/block_total
+            */
+            puts("hallooo");
+            if(send(sockfd, &adj_block[0]+vertex_total*(k%(vertex_total/block_total)), send_size, 0) != send_size)
+            {
+                perror("send");
+            }
+
+        }
+    }
+/*
+    for(int k=0;k<=vertex_total;k++)
+    {
+        if(k==id*sizes[1]/(sizeof(int32_t)*vertex_total))
+        {
+
+        }
+        vector<int32_t> row_k(vertex_total);
+        n = read(sockfd,&row_k[0],vertex_total*sizeof(int32_t));
+        k +=1
+    }
+*/
     close(sockfd);
 
     //delete adj_block;
