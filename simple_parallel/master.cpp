@@ -289,7 +289,6 @@ int main(int argc, char *argv[])
         }
 
         // Send out data
-        int ack_id = 0;
         for(int j=0;j<block_total*red_mult;j++)
         {
             printf("Sending row_k to slave ID: %d\n",j);
@@ -302,20 +301,19 @@ int main(int argc, char *argv[])
                 {
                     perror("send");
                 }
-                puts("SIGISGNOSDGJFOSDJFOSDIJFOSDJFOSDJFOSDJF");
+                printf("BROADCASTING ROW %d : ",k);
                 print_adj_matrix(row_k,vertex_total);
                 if( send(sd, &row_k[0],sizeof(int32_t)*vertex_total,0) != sizeof(int32_t)*vertex_total )
                 {
                     perror("send");
                 }
 
-                int cc = read(sd, &ack_id, sizeof(int32_t));
+                //read(sd, &ack_id, sizeof(int32_t));
                 //printf("%d %d",ack_id, cc);
             }
         }
 
-        /*
-        puts("PUTTING UP THEM BOOLZ");
+        puts("Initializing boolean array");
         bool ack_arr[block_total];
         for(int j=0;j<block_total;j++)
         {
@@ -327,7 +325,7 @@ int main(int argc, char *argv[])
         int ack_count = 0;
         while(ack_count < block_total)
         {
-            puts ("SETTING UP THEM SOCKETS");
+            puts ("Refreshing socket fd's");
             //clear the socket set
             FD_ZERO(&readfds);
 
@@ -349,10 +347,10 @@ int main(int argc, char *argv[])
                 if(sd > max_sd)
                     max_sd = sd;
             }
-            puts("I'M WAITING");
+            puts("Waiting for socket activity ... ");
             //wait for an activity on one of zthe sockets , timeout is NULL , so wait indefinitely
             activity = select( max_sd + 1 , &readfds , NULL , NULL , NULL);
-            puts("NOW I'M NOT");
+            puts("Socket activity detected on ...");
             if ((activity < 0) && (errno!=EINTR))
             {
                 printf("select error");
@@ -365,7 +363,7 @@ int main(int argc, char *argv[])
                 sd = client_socket[j];
                 if(ack_arr[j] == 0 && FD_ISSET(sd, &readfds))
                 {
-                    puts("SLAVE_SOCKET");
+                    printf("SLAVE_SOCKET %d\n",j);
                     t = read(sd, &ack_id, sizeof(int32_t));
                     if(t>0)
                     {
@@ -376,7 +374,7 @@ int main(int argc, char *argv[])
                 }
             }
         }
-        */
+
     }
 
     for(int k=0;k<vertex_total;k++)
@@ -418,6 +416,7 @@ int main(int argc, char *argv[])
         if(solution[x]==1000)
             solution[x]=0;
     }
+
     print_adj_matrix(solution, vertex_total);
     return 0;
 }
