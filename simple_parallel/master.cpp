@@ -50,6 +50,11 @@ void print_adj_matrix(vector<int32_t> matrix, int n)
     printf("\n");
 }
 
+int get_index(int i, int j, int w)
+{
+    return i*w+j;
+}
+
 int main(int argc, char *argv[])
 {
     if(argc != 4)
@@ -58,14 +63,28 @@ int main(int argc, char *argv[])
         exit(1);
     }
     srand(time(0));
+
     int block_total = atoi(argv[1]); // number of blocks of data
     int red_mult = atoi(argv[2]); // redundancy multiplier
     int vertex_total = atoi(argv[3]); // for testing
-    int block_size = vertex_total/block_total;
+    int block_size = vertex_total/block_total; // ** NUMBER OF ROWS STOP FORGETTING **
     int slave_count = 0;
 
-    vector<int32_t> adj_matrix = generate_adj_matrix(vertex_total);
+    vector<int32_t> solution(vertex_total*vertex_total);
+    int sol_count = 0;
+
+    int32_t hard[16] = {0,0,2,0, 4,0,3,0, 0,0,0,2, 0,1,0,0};
+    vector<int32_t> adj_matrix(hard, hard+sizeof(hard)/sizeof(int32_t) ); //generate_adj_matrix(vertex_total);
     print_adj_matrix(adj_matrix, vertex_total);
+    for(int a=0; a<vertex_total; a++)
+        for(int b=0; b<vertex_total; b++)
+        {
+            if(a!=b)
+            {
+                if(adj_matrix[get_index(a,b,vertex_total)] == 0)
+                    adj_matrix[get_index(a,b,vertex_total)]=1000;
+            }
+        }
 
     int opt = TRUE;
     // NOTE: client_socket can be used to map a IDs (as indices) to slave nodes.
@@ -248,39 +267,157 @@ int main(int argc, char *argv[])
     for(int k=0;k<vertex_total;k++)
     {
         printf("k: %d\n",k);
-        printf("%d\n",k/(block_size));
+        //printf("%d\n",k/(block_size));
         sd = client_socket[k/(block_size)];
-        puts("hey");
+        int size_req = 2;
+        int32_t req[size_req];
+
+        // Send command 0 (request)
+        req[0] = 0;
+        req[1] = k;
+
         if(FD_ISSET(sd, &readfds))
         {
-            puts("listen");
-            int size_req = 2;
-            int32_t req[size_req];
-            req[0] = 0;
-            req[1] = k;
-            send(sd, &req, sizeof(int32_t)*size_req, 0);
-            puts("YABBA");
-            printf("Socket Descriptor: %d\n",sd);
+            // Command 0 sent (request row)
+            if( send(sd, &req, sizeof(int32_t)*size_req, 0) != sizeof(int32_t)*size_req )
+            {
+                perror("send");
+            }
+            //printf("Socket Descriptor: %d\n",sd);
             read(sd, &row_k[0],sizeof(int32_t)*vertex_total);
-            puts("DABBA DOO");
-            print_adj_matrix(row_k,vertex_total);
-        }/*
+            //print_adj_matrix(row_k,vertex_total);
+        }
+
+        // Send out data
+        int ack_id = 0;
         for(int j=0;j<block_total*red_mult;j++)
         {
-            printf("j %d\n",j);
-            if(j!=k/block_size)
+            printf("Sending row_k to slave ID: %d\n",j);
+            sd = client_socket[j];
+            if(FD_ISSET(sd, &readfds))
+            {
+                printf("Command %d: k=%d\n",req[0],req[1]);
+                req[0] = 1;
+                if( send(sd, &req, sizeof(int32_t), 0) != sizeof(int32_t) )
+                {
+                    perror("send");
+                }
+                puts("SIGISGNOSDGJFOSDJFOSDIJFOSDJFOSDJFOSDJF");
+                print_adj_matrix(row_k,vertex_total);
+                if( send(sd, &row_k[0],sizeof(int32_t)*vertex_total,0) != sizeof(int32_t)*vertex_total )
+                {
+                    perror("send");
+                }
+
+                int cc = read(sd, &ack_id, sizeof(int32_t));
+                //printf("%d %d",ack_id, cc);
+            }
+        }
+
+        /*
+        puts("PUTTING UP THEM BOOLZ");
+        bool ack_arr[block_total];
+        for(int j=0;j<block_total;j++)
+        {
+            ack_arr[j]=0;
+        }
+
+        int t = 0;
+        int ack_id = 0;
+        int ack_count = 0;
+        while(ack_count < block_total)
+        {
+            puts ("SETTING UP THEM SOCKETS");
+            //clear the socket set
+            FD_ZERO(&readfds);
+
+            //add master socket to set
+            FD_SET(master_socket, &readfds);
+            max_sd = master_socket;
+
+            //add child sockets to set
+            for ( i = 0 ; i < max_clients ; i++)
+            {
+                //socket descriptor
+                sd = client_socket[i];
+
+                //if valid socket descriptor then add to read list
+                if(sd > 0)
+                    FD_SET( sd , &readfds);
+
+                //highest file descriptor number, need it for the select function
+                if(sd > max_sd)
+                    max_sd = sd;
+            }
+            puts("I'M WAITING");
+            //wait for an activity on one of zthe sockets , timeout is NULL , so wait indefinitely
+            activity = select( max_sd + 1 , &readfds , NULL , NULL , NULL);
+            puts("NOW I'M NOT");
+            if ((activity < 0) && (errno!=EINTR))
+            {
+                printf("select error");
+            }
+
+            if (FD_ISSET(master_socket, &readfds)) { puts("MASTER_SOCKET"); continue; }
+
+            for(int j=0;j<block_total*red_mult;j++)
             {
                 sd = client_socket[j];
-                if(FD_ISSET(sd, &readfds))
+                if(ack_arr[j] == 0 && FD_ISSET(sd, &readfds))
                 {
-                    puts("watch out");
-                    int32_t req = 1;
-                    send(sd, &req, sizeof(int32_t), 0);
+                    puts("SLAVE_SOCKET");
+                    t = read(sd, &ack_id, sizeof(int32_t));
+                    if(t>0)
+                    {
+                        printf("ACK ID:%d\n",ack_id);
+                        ack_arr[ack_id]=1;
+                        ack_count++;
+                    }
                 }
             }
-        }*/
-
+        }
+        */
     }
 
+    for(int k=0;k<vertex_total;k++)
+    {
+        sd = client_socket[k/(block_size)];
+        int size_req = 2;
+        int32_t req[size_req];
+
+        // Send command 0 (request)
+        req[0] = 0;
+        req[1] = k;
+
+        if(FD_ISSET(sd, &readfds))
+        {
+            // Command 0 sent (request row)
+            if( send(sd, &req, sizeof(int32_t)*size_req, 0) != sizeof(int32_t)*size_req )
+            {
+                perror("send");
+            }
+            //printf("Socket Descriptor: %d\n",sd);
+            read(sd, &row_k[0],sizeof(int32_t)*vertex_total);
+            //print_adj_matrix(row_k,vertex_total);
+            for(int c=0;c<row_k.size();c++)
+            {
+                solution[sol_count] = row_k[c];
+                sol_count++;
+            }
+        }
+    }
+
+    for(i=0;i<max_clients;i++)
+    {
+        sd=client_socket[i];
+        close(sd);
+    }
+
+    for(int x=0;x<solution.size();x++)
+    {
+        if(solution[x]==1000)
+            solution[x]=0;
+    }
+    print_adj_matrix(solution, vertex_total);
     return 0;
 }

@@ -9,20 +9,57 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+using namespace std;
+
 void error(const char *msg)
 {
     perror(msg);
     exit(0);
 }
 
-using namespace std;
+void print_adj_matrix(vector<int32_t> matrix, int n)
+{
+    for(int j=0; j<matrix.size(); j++)
+    {
+        if(j!=0 && j%n==0)
+            printf("\n");
+        printf("%d ",matrix[j]);
+    }
+    printf("\n");
+}
+
+int get_index(int i, int j, int w)
+{
+    return i*w+j;
+}
+
+void relax(vector<int32_t> &adj_block, int id, vector<int32_t> row_k, int k, int b_s, int v_t)
+{
+    int ind;
+    int comp_distance;
+    for(int i=0;i<b_s;i++)
+    {
+        for(int j=0;j<v_t;j++)
+        {
+            ind=get_index(i,j,v_t);
+            comp_distance = adj_block[get_index(i,k,v_t)]+row_k[j];
+            if(adj_block[ind] > comp_distance)
+                adj_block[ind] = comp_distance;
+        }
+    }
+    if(k==1)
+    {puts("***********************");
+        print_adj_matrix(adj_block,v_t);
+        puts("------------------------------");
+        }
+}
 
 int main(int argc, char *argv[])
 {
     int sockfd, portno, n;
     struct sockaddr_in serv_addr;
     struct hostent *server;
-    int k = 0;
+    int32_t k = 0;
 
     char buffer[256];
     if (argc < 3) {
@@ -52,17 +89,6 @@ int main(int argc, char *argv[])
     if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0)
         error("ERROR connecting");
 
-    /*printf("Please enter the message: ");
-
-    bzero(buffer,256);
-    fgets(buffer,255,stdin);
-
-    n = write(sockfd,buffer,strlen(buffer));
-    if (n < 0)
-         error("ERROR writing to socket");
-    bzero(buffer,256);
-    */
-
     int size_sizes = 4;
     int32_t sizes[size_sizes];
 
@@ -80,58 +106,66 @@ int main(int argc, char *argv[])
     if (n < 0)
          error("ERROR reading from socket");
     int vertex_total = sizes[0];
-    int id = sizes[2];
+    int32_t id = sizes[2];
     int block_total = sizes[3];
 
     for(int i=0; i<adj_block.size(); i++)
     {
-        //(adj_block[i] == 0 )
-        //    adj_block[i] = vertex_total+1; // unweighted graphs only, n+1
         if(i%vertex_total==0 && i!=0)
             puts("");
         printf("%d ",adj_block[i]);
     }
     puts("");
 
+    vector<int32_t> row_k(vertex_total);
     while(true)
     {
-        int size_req = 2;
-        int req[size_req];
-        puts("why won't you love me");
+        int32_t size_req = 2;
+        int32_t req[size_req];
+        puts("Waiting for command ...");
         n = read(sockfd,&req,size_req*sizeof(int32_t));
-        printf("Bytes read:%d Command:%d\n",n,req[0]);
+        printf("Bytes read:%d Command:%d k:%d\n",n,req[0],req[1]);
         k = req[1];
+
         if(req[0]==0)
         {
             int send_size = vertex_total*sizeof(int32_t);
-            puts("Hello world");
+
             /*
              * vertex_total * row_index
              *                row_index = k % (rows in a block)
              *                                (rows in a block) = vertex_total/block_total
             */
-            puts("hallooo");
             if(send(sockfd, &adj_block[0]+vertex_total*(k%(vertex_total/block_total)), send_size, 0) != send_size)
             {
                 perror("send");
             }
-
         }
-    }
-/*
-    for(int k=0;k<=vertex_total;k++)
-    {
-        if(k==id*sizes[1]/(sizeof(int32_t)*vertex_total))
+        if(req[0]==1)
         {
+            printf("** K VALUE : %d\n",k);
+            read(sockfd,&row_k[0],vertex_total*sizeof(int32_t));
+            // Call relaxation function.
+            int b_s=0;
+            if(id==block_total-1)
+                b_s=vertex_total/block_total;
+            else
+                b_s=vertex_total%block_total;
+            printf("%d\n !!!!!!!!!!!!!!!!!1 \n",k);
+            print_adj_matrix(row_k,vertex_total);
+            relax(adj_block,id,row_k,k,b_s,vertex_total);
+            // Send back "Done"
+            print_adj_matrix(adj_block,vertex_total);
+            if( send(sockfd,&id,sizeof(int32_t),0) != sizeof(int32_t))
+            {
+                perror("send");
+            }
 
+            printf("SENT ACK %d\n",id);
         }
-        vector<int32_t> row_k(vertex_total);
-        n = read(sockfd,&row_k[0],vertex_total*sizeof(int32_t));
-        k +=1
     }
-*/
+
     close(sockfd);
 
-    //delete adj_block;
     return 0;
 }
