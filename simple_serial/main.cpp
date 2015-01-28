@@ -29,6 +29,8 @@ int main(int argc, char* argv[]) {
 	std::string names[v_count];
         std::vector<std::string> temp;
 
+	printf("%d\n",v_count);
+
 	// Store names, load up the split vectors.
 	if(data_file.is_open()) {
 		while(getline(data_file,line)) {

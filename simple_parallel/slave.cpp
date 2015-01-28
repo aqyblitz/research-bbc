@@ -33,7 +33,7 @@ int get_index(int i, int j, int w)
     return i*w+j;
 }
 
-void relax(vector<int32_t> &adj_block, int id, vector<int32_t> row_k, int k, int b_s, int v_t)
+void relax(vector<int32_t> &adj_block, int id, vector<int32_t> &row_k, int k, int b_s, int v_t)
 {
     int ind;
     int comp_distance;
@@ -47,11 +47,6 @@ void relax(vector<int32_t> &adj_block, int id, vector<int32_t> row_k, int k, int
                 adj_block[ind] = comp_distance;
         }
     }
-    if(k==1)
-    {puts("***********************");
-        print_adj_matrix(adj_block,v_t);
-        puts("------------------------------");
-        }
 }
 
 int main(int argc, char *argv[])
@@ -62,7 +57,8 @@ int main(int argc, char *argv[])
     int32_t k = 0;
 
     char buffer[256];
-    if (argc < 3) {
+    if (argc < 3)
+    {
        fprintf(stderr,"usage %s hostname port\n", argv[0]);
        exit(0);
     }
@@ -92,12 +88,14 @@ int main(int argc, char *argv[])
     int size_sizes = 4;
     int32_t sizes[size_sizes];
 
+    puts("Reading in total # of vertices, # of values in this slave's adj block, ID, and # of blocks (or # of slave nodes w/ unique IDs)");
     n = read(sockfd,sizes,size_sizes*sizeof(int32_t));
     if (n < 0)
          error("ERROR reading from socket");
+    printf("%s","** DEBUG : sizes = [");
     for(int i=0; i<size_sizes; i++)
         printf("%d ",sizes[i]);
-    puts("");
+    printf("%s","]\n");
 
     // size = # of vertices (elements per row) TIMES the number of rows = total length of vector
     vector<int32_t> adj_block(sizes[1]/sizeof(int32_t));
@@ -120,15 +118,16 @@ int main(int argc, char *argv[])
     vector<int32_t> row_k(vertex_total);
     while(true)
     {
+        puts("STATE 0 : WAITING FOR COMMAND ...");
         int32_t size_req = 2;
         int32_t req[size_req];
-        puts("Waiting for command ...");
         n = read(sockfd,&req,size_req*sizeof(int32_t));
-        printf("Bytes read:%d Command:%d k:%d\n",n,req[0],req[1]);
+        printf("Bytes read=%d Command ID=%d k=%d\n",n,req[0],req[1]);
         k = req[1];
 
         if(req[0]==0)
         {
+            puts("STATE 1 : REQUEST COMMAND RECEIVED");
             int send_size = vertex_total*sizeof(int32_t);
 
             /*
@@ -140,28 +139,35 @@ int main(int argc, char *argv[])
             {
                 perror("send");
             }
+            puts("** Sent back requested data");
         }
         if(req[0]==1)
         {
-            printf("** K VALUE : %d\n",k);
-            read(sockfd,&row_k[0],vertex_total*sizeof(int32_t));
+            int32_t temp;
+            vector<int32_t> row_k_inc(vertex_total);
+            puts("STATE 2 : COMPUTE COMMAND RECEIVED");
+            read(sockfd, &row_k_inc[0],sizeof(int32_t)*vertex_total);
+            printf("Attempting to print row_k_inc\n");
+            for(int q=0;q<vertex_total;q++){
+                printf("%d ",row_k_inc[q]);
+            }
+            printf("\n");
+
             // Call relaxation function.
-            int b_s=0;
-            if(id==block_total-1)
-                b_s=vertex_total/block_total;
-            else
-                b_s=vertex_total%block_total;
-            printf("%d\n !!!!!!!!!!!!!!!!!1 \n",k);
-            print_adj_matrix(row_k,vertex_total);
-            relax(adj_block,id,row_k,k,b_s,vertex_total);
+            int b_s=sizes[1]/vertex_total*1/sizeof(int32_t);
+            printf("** DEBUG : Block Size (# of rows)=%d\n",b_s);
+            relax(adj_block,id,row_k_inc,k,b_s,vertex_total);
+            //puts("------------------");
+            //print_adj_matrix(adj_block,vertex_total);
+            //puts("------------------");
+
             // Send back "Done"
-            print_adj_matrix(adj_block,vertex_total);
             if( send(sockfd,&id,sizeof(int32_t),0) != sizeof(int32_t))
             {
                 perror("send");
             }
 
-            printf("SENT ACK %d\n",id);
+            printf("** ACK message send, id=%d\n",id);
         }
     }
 
