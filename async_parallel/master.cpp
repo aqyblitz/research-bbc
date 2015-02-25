@@ -28,7 +28,7 @@ void print_adj_matrix(vector<int32_t> matrix, int n)
 
 void setup(const int& argc, char** argv, fd_set& readfds, fd_set& copyfds, int32_t& master_socket, sockaddr_in& address, int32_t& address_len, int32_t* client_socket, int32_t& block_total, int32_t& red_mult, int32_t& vertex_total, int32_t& block_size, int32_t& max_clients);
 void teardown(int32_t* client_socket);
-void emscripten_main(fd_set& readfds, fd_set& copyfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, int32_t& max_sd, int32_t& s, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& slave_total, const int32_t& vertex_total, const int32_t& max_clients, bool& requested, int32_t& ack, bool& loop);
+void emscripten_main(fd_set& readfds, fd_set& copyfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, int32_t& max_sd, int32_t& s, vector<int32_t>& adj_matrix, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& slave_total, const int32_t& vertex_total, const int32_t& max_clients, const int32_t& block_size, bool& requested, int32_t& ack, bool& loop);
 
 int main(int argc, char *argv[])
 {
@@ -39,6 +39,11 @@ int main(int argc, char *argv[])
     int32_t max_sd;
     struct sockaddr_in address;
     int32_t address_len;
+
+    // [DEBUG]
+    int32_t hard[36] = {1,1,0,0,1,0, 1,0,1,0,1,0, 0,1,0,1,0,0, 0,0,1,0,1,1, 1,1,0,1,0,0, 0,0,0,1,0,0};
+    //int32_t hard[16] = {0,0,2,0, 4,0,3,0, 0,0,0,2, 0,1,0,0};
+    vector<int32_t> adj_matrix(hard, hard+sizeof(hard)/sizeof(int32_t) ); //generate_adj_matrix(vertex_total);
 
     setup(argc, argv, readfds, copyfds, master_socket, address, address_len, client_socket, block_total, red_mult, vertex_total, block_size, max_clients);
 
@@ -54,7 +59,7 @@ int main(int argc, char *argv[])
 
     while(loop)
     {
-        emscripten_main(readfds,copyfds,address,address_len,master_socket,client_socket,max_sd,state,k,ack_slave_c,slave_count,block_total,vertex_total,max_clients,requested,ack,loop);
+        emscripten_main(readfds,copyfds,address,address_len,master_socket,client_socket,max_sd,state,adj_matrix,k,ack_slave_c,slave_count,block_total,vertex_total,block_size,max_clients,requested,ack,loop);
     }
 
     teardown(client_socket);
@@ -161,7 +166,7 @@ void rebuild_fd_table(fd_set& readfds, fd_set& copyfds)
 }
 
 // int32_t max_sd,
-void emscripten_main(fd_set& readfds, fd_set& copyfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, int32_t& max_sd, int32_t &s, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& block_total, const int32_t& vertex_total, const int32_t& max_clients, bool& requested, int32_t& ack, bool& loop)
+void emscripten_main(fd_set& readfds, fd_set& copyfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, int32_t& max_sd, int32_t &s, vector<int32_t>& adj_matrix, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& block_total, const int32_t& vertex_total, const int32_t& max_clients, const int32_t& block_size, bool& requested, int32_t& ack, bool& loop)
 {
     int32_t i, n, sd, new_socket, activity;
 
@@ -187,14 +192,14 @@ void emscripten_main(fd_set& readfds, fd_set& copyfds, const sockaddr_in& addres
 
                     printf("New connection: socket fd=%d , ip=%s , port=%d \n" , new_socket , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
 
-                    // Prepping first message.
+                    // Prepping firwell it dost message.
                     int32_t size_sizes = 4;
                     int32_t sizes[size_sizes];
                     sizes[0] = vertex_total;
                     sizes[2] = slave_count-1; //setting ID. This will always work, but the harder part of redundancy is incrementing slave_count properly.
                     sizes[3] = block_total;
 
-                    int32_t send_size0;
+                    int32_t send_size;
                     if(slave_count == vertex_total && vertex_total%block_total>0)
                     {
                         puts ("** NON-EVEN CASE (unique end case)");
