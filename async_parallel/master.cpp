@@ -18,7 +18,7 @@ using namespace std;
 // TODO
 // - we're sending the data back to all the sockets for relaxation...including the one we got it from. Nah.
 
-void print_adj_matrix(vector<int32_t> matrix, int n)
+void print_adj_matrix(vector<int32_t>& matrix, int n)
 {
     for(int j=0; j<matrix.size(); j++)
     {
@@ -176,9 +176,9 @@ bool emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t&
 
     if(s==0) // state 0
     {
-        puts("[DEBUG] STATE 0");
+        //puts("[DEBUG] STATE 0");
         build_fd_table(readfds,master_socket,client_socket,max_clients,max_sd);
-        puts("[DEBUG] FD table built");
+        //puts("[DEBUG] FD table built");
 
         activity = select( max_sd + 1 , &readfds , NULL , NULL , &tv);
 
@@ -193,6 +193,7 @@ bool emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t&
                     perror("accept");
                     exit(EXIT_FAILURE);
                 }
+                fcntl(new_socket, F_SETFL, O_NONBLOCK);
 
                 // Increment count of number of slaves we'll have to work with
                 slave_count++;
@@ -260,13 +261,15 @@ bool emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t&
             {
                 s=1;
                 // DEBUG
-                return false;
+                build_fd_table(readfds,master_socket,client_socket,max_clients,max_sd);
+                return true;
             }
         }
     }
 
     if(s==1)
     {
+        //puts("[DEBUG] STATE 1");
         if(k==vertex_total)
         {
             s=5;
@@ -278,17 +281,46 @@ bool emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t&
         if(!requested)
         {
             // Request row k
-            printf("STATE 1 : Retrieve row k=%d\n",k);
-            printf("** DEBUG ID=%d\n",k/(block_size));
+            printf("[DEBUG] Retrieve row k=%d\n",k);
+            //printf("[DEBUG] ID=%d\n",k/(block_size));
             sd = client_socket[k/(block_size)];
-            printf("** DEBUG SOCK_FD=%d\n",client_socket[k/(block_size)]);
-            requested=true;
+            //printf("[DEBUG] SOCK_FD=%d\n",client_socket[k/(block_size)]);
+            int sock_code = FD_ISSET(sd, &readfds);
+            if(sock_code)
+            {
+                int32_t size_req = 2;
+                int32_t req[size_req];
+
+                // Send command 0 (request)
+                req[0] = 0;
+                req[1] = k;
+
+                // Command 0 sent (request row)
+                printf("[DEBUG] Command %d: k=%d\n",req[0],req[1]);
+                printf("[DEBUG] Requesting row %d from slave ID=%d\n",k,k/block_size);
+                if( send(sd, &req, sizeof(int32_t)*size_req, 0) != sizeof(int32_t)*size_req )
+                {
+                    perror("send");
+                }
+                //printf("Socket Descriptor: %d\n",sd);
+                requested=true;
+            }
+            else
+            {
+                printf("-- ERROR: Socket ID %d not valid connection on REQUEST command | %d\n",k/block_size,sock_code);
+            }
         }
-        // n=read(&row_k)
-        if(n==vertex_total*sizeof(int32_t)) // read completed
+        else
         {
-            // send data to all slaves
-            s=2;
+            n=read(sd, &row_k[0],sizeof(int32_t)*vertex_total);
+            if(n != -1)
+                printf("%d\n",n);
+            if(n == vertex_total*sizeof(int32_t))
+            {
+                s=2;
+                print_adj_matrix(row_k,vertex_total);
+                return false;
+            }
         }
     }
 
