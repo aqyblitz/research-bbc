@@ -26,13 +26,13 @@ void print_adj_matrix(vector<int32_t> matrix, int n)
     printf("\n");
 }
 
-void setup(const int& argc, char** argv, fd_set& readfds, fd_set& copyfds, int32_t& master_socket, sockaddr_in& address, int32_t& address_len, int32_t* client_socket, int32_t& block_total, int32_t& red_mult, int32_t& vertex_total, int32_t& block_size, int32_t& max_clients);
+void setup(const int& argc, char** argv, fd_set& readfds, int32_t& master_socket, sockaddr_in& address, int32_t& address_len, int32_t* client_socket, int32_t& block_total, int32_t& red_mult, int32_t& vertex_total, int32_t& block_size, int32_t& max_clients);
 void teardown(int32_t* client_socket);
-void emscripten_main(fd_set& readfds, fd_set& copyfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, int32_t& max_sd, int32_t& s, vector<int32_t>& adj_matrix, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& slave_total, const int32_t& vertex_total, const int32_t& max_clients, const int32_t& block_size, bool& requested, int32_t& ack, bool& loop);
+void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, int32_t& max_sd, int32_t& s, vector<int32_t>& adj_matrix, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& slave_total, const int32_t& vertex_total, const int32_t& max_clients, const int32_t& block_size, bool& requested, int32_t& ack, bool& loop);
 
 int main(int argc, char *argv[])
 {
-    fd_set readfds, copyfds;
+    fd_set readfds;
     int32_t block_total, red_mult, vertex_total, block_size;
     int32_t master_socket , addrlen , new_socket , max_clients;
     int32_t* client_socket; //[block_total*red_mult+1]
@@ -45,7 +45,7 @@ int main(int argc, char *argv[])
     //int32_t hard[16] = {0,0,2,0, 4,0,3,0, 0,0,0,2, 0,1,0,0};
     vector<int32_t> adj_matrix(hard, hard+sizeof(hard)/sizeof(int32_t) ); //generate_adj_matrix(vertex_total);
 
-    setup(argc, argv, readfds, copyfds, master_socket, address, address_len, client_socket, block_total, red_mult, vertex_total, block_size, max_clients);
+    setup(argc, argv, readfds, master_socket, address, address_len, client_socket, block_total, red_mult, vertex_total, block_size, max_clients);
 
     bool loop=false;
     int32_t state=0;
@@ -59,7 +59,7 @@ int main(int argc, char *argv[])
 
     while(loop)
     {
-        emscripten_main(readfds,copyfds,address,address_len,master_socket,client_socket,max_sd,state,adj_matrix,k,ack_slave_c,slave_count,block_total,vertex_total,block_size,max_clients,requested,ack,loop);
+        emscripten_main(readfds,address,address_len,master_socket,client_socket,max_sd,state,adj_matrix,k,ack_slave_c,slave_count,block_total,vertex_total,block_size,max_clients,requested,ack,loop);
     }
 
     teardown(client_socket);
@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-void setup(const int& argc, char** argv, fd_set& readfds, fd_set& copyfds, int32_t& master_socket, sockaddr_in& address, int32_t& address_len, int32_t* client_socket, int32_t& block_total, int32_t& red_mult, int32_t& vertex_total, int32_t& block_size, int32_t& max_clients)
+void setup(const int& argc, char** argv, fd_set& readfds, int32_t& master_socket, sockaddr_in& address, int32_t& address_len, int32_t* client_socket, int32_t& block_total, int32_t& red_mult, int32_t& vertex_total, int32_t& block_size, int32_t& max_clients)
 {
     int32_t i;
     int32_t opt=1; // aka TRUE
@@ -160,19 +160,14 @@ void build_fd_table(fd_set& fds, int32_t& master_socket, int32_t* client_socket,
     }
 }
 
-void rebuild_fd_table(fd_set& readfds, fd_set& copyfds)
-{
-    // Deep copy
-}
-
 // int32_t max_sd,
-void emscripten_main(fd_set& readfds, fd_set& copyfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, int32_t& max_sd, int32_t &s, vector<int32_t>& adj_matrix, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& block_total, const int32_t& vertex_total, const int32_t& max_clients, const int32_t& block_size, bool& requested, int32_t& ack, bool& loop)
+void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, int32_t& max_sd, int32_t &s, vector<int32_t>& adj_matrix, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& block_total, const int32_t& vertex_total, const int32_t& max_clients, const int32_t& block_size, bool& requested, int32_t& ack, bool& loop)
 {
     int32_t i, n, sd, new_socket, activity;
 
     if(s==0) // state 0
     {
-        rebuild_fd_table(readfds,copyfds);
+        build_fd_table(readfds,master_socket,client_socket,max_clients,max_sd);
         //activity=select(); // poll sockets
         if(activity>0)
         {
@@ -244,7 +239,6 @@ void emscripten_main(fd_set& readfds, fd_set& copyfds, const sockaddr_in& addres
                         {
                             client_socket[i] = new_socket;
                             printf("Adding to list of sockets as %d\n" , i);
-
                             break;
                         }
                     }
@@ -286,7 +280,7 @@ void emscripten_main(fd_set& readfds, fd_set& copyfds, const sockaddr_in& addres
 
     if(s==2)
     {
-        rebuild_fd_table(readfds,copyfds);
+        build_fd_table(readfds,master_socket,client_socket,max_clients,max_sd);
         //activity=select(); // poll sockets
         if(activity>0)
         {
