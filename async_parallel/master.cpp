@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <math.h>
 #include <vector>
 #include <cstdlib>
 #include <stdio.h>
@@ -29,29 +30,29 @@ void print_adj_matrix(vector<int32_t> matrix, int n)
 }
 
 void setup(const int& argc, char** argv, fd_set& readfds, int32_t& master_socket, sockaddr_in& address, int32_t& address_len, int32_t* client_socket, int32_t& block_total, int32_t& red_mult, int32_t& vertex_total, int32_t& block_size, int32_t& max_clients);
-void teardown(int32_t* client_socket);
-void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, timeval& tv, int32_t& max_sd, int32_t& s, vector<int32_t>& adj_matrix, vector<int32_t>& row_k, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& slave_total, const int32_t& vertex_total, const int32_t& max_clients, const int32_t& block_size, bool& requested, int32_t& ack, bool& loop);
+void teardown();
+bool emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, timeval& tv, int32_t& max_sd, int32_t& s, vector<int32_t>& adj_matrix, vector<int32_t>& row_k, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& slave_total, const int32_t& vertex_total, const int32_t& max_clients, const int32_t& block_size, bool& requested, int32_t& ack);
 
 int main(int argc, char *argv[])
 {
     fd_set readfds;
     int32_t block_total, red_mult, vertex_total, block_size;
     int32_t master_socket , addrlen , new_socket , max_clients;
-    int32_t* client_socket; //[block_total*red_mult+1]
+    int32_t client_socket[1000]; //temp cap, compare with [block_total*red_mult+1]
     int32_t max_sd;
     struct sockaddr_in address;
     int32_t address_len;
     struct timeval tv = {.5, 0};
 
-    // [DEBUG]
-    int32_t hard[36] = {1,1,0,0,1,0, 1,0,1,0,1,0, 0,1,0,1,0,0, 0,0,1,0,1,1, 1,1,0,1,0,0, 0,0,0,1,0,0};
+    // [DEBUG]are
+    int32_t hard[49] = {1,1,0,0,1,0,0, 1,0,1,0,1,0,0, 0,1,0,1,0,0,0, 0,0,1,0,1,1,0, 1,1,0,1,0,0,0, 0,0,0,1,0,0,0, 0,0,0,0,0,0,0};
     //int32_t hard[16] = {0,0,2,0, 4,0,3,0, 0,0,0,2, 0,1,0,0};
     vector<int32_t> adj_matrix(hard, hard+sizeof(hard)/sizeof(int32_t) ); //generate_adj_matrix(vertex_total);
     vector<int32_t> row_k(vertex_total);
 
     setup(argc, argv, readfds, master_socket, address, address_len, client_socket, block_total, red_mult, vertex_total, block_size, max_clients);
 
-    bool loop=false;
+    bool loop=true;
     int32_t state=0;
     int32_t slave_count=0;
     int32_t k=0;
@@ -61,10 +62,15 @@ int main(int argc, char *argv[])
 
     while(loop)
     {
-        emscripten_main(readfds,address,address_len,master_socket,client_socket,tv,max_sd,state,adj_matrix,row_k,k,ack_slave_c,slave_count,block_total,vertex_total,block_size,max_clients,requested,ack,loop);
+        loop=emscripten_main(readfds,address,address_len,master_socket,client_socket,tv,max_sd,state,adj_matrix,row_k,k,ack_slave_c,slave_count,block_total,vertex_total,block_size,max_clients,requested,ack);
     }
 
-    teardown(client_socket);
+    // TODO doing anything here creates:
+    /*
+     * terminate called after throwing an instance of 'std::bad_alloc'
+     *  what():  std::bad_alloc */
+
+    teardown();
 
     return 0;
 }
@@ -75,7 +81,7 @@ void setup(const int& argc, char** argv, fd_set& readfds, int32_t& master_socket
     int32_t opt=1; // aka TRUE
     if(argc != 4)
     {
-        fprintf(stderr,"ERROR: Input should come in the form of two int values: # of blocks, # of slave nodes per block\n");
+        fprintf(stderr,"ERROR: Usage <# of blocks> <redundancy multiplier> <# of slave nodes per block> <total vertex count>\n");
         exit(1);
     }
 
@@ -84,11 +90,16 @@ void setup(const int& argc, char** argv, fd_set& readfds, int32_t& master_socket
     vertex_total = atoi(argv[3]); // suuuper important
     block_size = vertex_total/block_total; // ** NUMBER OF ROWS STOP FORGETTING **
     max_clients = red_mult*block_total;
+    if(max_clients > 1000-1)
+    {
+        fprintf(stderr,"ERROR: Client limit exceeded\n");
+        exit(1);
+    }
 
-    client_socket = new int32_t[max_clients+1];
+    //client_socket = new int32_t[max_clients+1];
     // Setup socket stuff.
     // Initialize to 0. Means they're empty (for now).
-    for (i=0; i<max_clients; i++)
+    for (i=0; i<max_clients+1; i++) // TODO remove the +1
     {
         client_socket[i] = 0;
     }
@@ -128,11 +139,9 @@ void setup(const int& argc, char** argv, fd_set& readfds, int32_t& master_socket
     }
 }
 
-void teardown(int* client_socket)
+void teardown()
 {
-    // Close connections.
-    // Delete stuff allocated with new.
-    delete[] client_socket;
+
 }
 
 void build_fd_table(fd_set& fds, int32_t& master_socket, int32_t* client_socket, const int32_t& max_clients, int32_t& max_sd)
@@ -161,7 +170,7 @@ void build_fd_table(fd_set& fds, int32_t& master_socket, int32_t* client_socket,
     }
 }
 
-void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, timeval& tv, int32_t& max_sd, int32_t &s, vector<int32_t>& adj_matrix, vector<int32_t>& row_k, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& block_total, const int32_t& vertex_total, const int32_t& max_clients, const int32_t& block_size, bool& requested, int32_t& ack, bool& loop)
+bool emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, timeval& tv, int32_t& max_sd, int32_t &s, vector<int32_t>& adj_matrix, vector<int32_t>& row_k, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& block_total, const int32_t& vertex_total, const int32_t& max_clients, const int32_t& block_size, bool& requested, int32_t& ack)
 {
     int32_t i, n, sd, new_socket, activity;
 
@@ -198,10 +207,10 @@ void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t&
                 sizes[3] = block_total;
 
                 int32_t send_size;
-                if(slave_count == vertex_total && vertex_total%block_total>0)
+                if(slave_count == block_total && vertex_total%block_size > 0)
                 {
                     puts ("[DEBUG] Sending data for unique end case");
-                    send_size = vertex_total*(vertex_total%block_total)*sizeof(int32_t);
+                    send_size = vertex_total*(vertex_total-(block_total-1)*block_size)*sizeof(int32_t);
                     sizes[1] = send_size;
 
                     if( send(new_socket, sizes, sizeof(int32_t)*size_sizes, 0) != sizeof(int32_t)*size_sizes )
@@ -209,7 +218,7 @@ void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t&
                         perror("send");
                     }
                     puts("[DEBUG] Sent metadata");
-                    if( send(new_socket, &adj_matrix[0]+(slave_count-1)*vertex_total*(vertex_total%block_total), send_size, 0) != send_size )
+                    if( send(new_socket, &adj_matrix[0]+(slave_count-1)*vertex_total*(int)ceil((1.0*vertex_total)/block_total), send_size, 0) != send_size )
                     {
                         perror("send");
                     }
@@ -217,7 +226,7 @@ void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t&
                 }
                 else
                 {
-                    puts ("[DEBUG] Sending data for standard end case");
+                    puts ("[DEBUG] Sending data for standard case");
                     send_size = vertex_total*(block_size)*sizeof(int32_t);
                     sizes[1] = send_size;
 
@@ -247,12 +256,11 @@ void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t&
                 }
             }
 
-            if(slave_count == block_total) // [RED]
+            if(slave_count == block_total+1) // [RED] +1 for now
             {
                 s=1;
                 // DEBUG
-                loop=false;
-                return;
+                return false;
             }
         }
     }
@@ -264,7 +272,7 @@ void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t&
             s=5;
             k=0; // going to re-use for retrieving answer
             requested=false;
-            return;
+            return true;
         }
 
         if(!requested)
@@ -317,7 +325,7 @@ void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t&
                 ack_slave_c=0;
                 requested=false;
                 s=1;
-                return;
+                return true;
             }
         }
     }
@@ -326,8 +334,7 @@ void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t&
     {
         if(k==vertex_total)
         {
-            loop=false;
-            return;
+            return false;
         }
         if(!requested)
         {
@@ -340,4 +347,6 @@ void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t&
             k++;
         }
     }
+
+    return true;
 }
