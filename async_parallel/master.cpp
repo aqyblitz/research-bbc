@@ -7,6 +7,8 @@
 #include <vector>
 #include <cstdlib>
 #include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 #define PORT 8888
 
@@ -28,7 +30,7 @@ void print_adj_matrix(vector<int32_t> matrix, int n)
 
 void setup(const int& argc, char** argv, fd_set& readfds, int32_t& master_socket, sockaddr_in& address, int32_t& address_len, int32_t* client_socket, int32_t& block_total, int32_t& red_mult, int32_t& vertex_total, int32_t& block_size, int32_t& max_clients);
 void teardown(int32_t* client_socket);
-void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, int32_t& max_sd, int32_t& s, vector<int32_t>& adj_matrix, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& slave_total, const int32_t& vertex_total, const int32_t& max_clients, const int32_t& block_size, bool& requested, int32_t& ack, bool& loop);
+void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, timeval& tv, int32_t& max_sd, int32_t& s, vector<int32_t>& adj_matrix, vector<int32_t>& row_k, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& slave_total, const int32_t& vertex_total, const int32_t& max_clients, const int32_t& block_size, bool& requested, int32_t& ack, bool& loop);
 
 int main(int argc, char *argv[])
 {
@@ -39,11 +41,13 @@ int main(int argc, char *argv[])
     int32_t max_sd;
     struct sockaddr_in address;
     int32_t address_len;
+    struct timeval tv = {.5, 0};
 
     // [DEBUG]
     int32_t hard[36] = {1,1,0,0,1,0, 1,0,1,0,1,0, 0,1,0,1,0,0, 0,0,1,0,1,1, 1,1,0,1,0,0, 0,0,0,1,0,0};
     //int32_t hard[16] = {0,0,2,0, 4,0,3,0, 0,0,0,2, 0,1,0,0};
     vector<int32_t> adj_matrix(hard, hard+sizeof(hard)/sizeof(int32_t) ); //generate_adj_matrix(vertex_total);
+    vector<int32_t> row_k(vertex_total);
 
     setup(argc, argv, readfds, master_socket, address, address_len, client_socket, block_total, red_mult, vertex_total, block_size, max_clients);
 
@@ -55,11 +59,9 @@ int main(int argc, char *argv[])
     int32_t ack=0;
     int32_t ack_slave_c=0;
 
-    vector<int32_t> solution(vertex_total*vertex_total);
-
     while(loop)
     {
-        emscripten_main(readfds,address,address_len,master_socket,client_socket,max_sd,state,adj_matrix,k,ack_slave_c,slave_count,block_total,vertex_total,block_size,max_clients,requested,ack,loop);
+        emscripten_main(readfds,address,address_len,master_socket,client_socket,tv,max_sd,state,adj_matrix,row_k,k,ack_slave_c,slave_count,block_total,vertex_total,block_size,max_clients,requested,ack,loop);
     }
 
     teardown(client_socket);
@@ -102,6 +104,8 @@ void setup(const int& argc, char** argv, fd_set& readfds, int32_t& master_socket
         perror("setsockopt");
         exit(EXIT_FAILURE);
     }
+    fcntl(master_socket, F_SETFL, O_NONBLOCK);
+
     // Set values on address struct.
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
@@ -122,9 +126,6 @@ void setup(const int& argc, char** argv, fd_set& readfds, int32_t& master_socket
         perror("listen");
         exit(EXIT_FAILURE);
     }
-
-    // Initialize arrays.
-
 }
 
 void teardown(int* client_socket)
@@ -160,97 +161,98 @@ void build_fd_table(fd_set& fds, int32_t& master_socket, int32_t* client_socket,
     }
 }
 
-// int32_t max_sd,
-void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, int32_t& max_sd, int32_t &s, vector<int32_t>& adj_matrix, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& block_total, const int32_t& vertex_total, const int32_t& max_clients, const int32_t& block_size, bool& requested, int32_t& ack, bool& loop)
+void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t& address_len, int32_t& master_socket, int32_t* client_socket, timeval& tv, int32_t& max_sd, int32_t &s, vector<int32_t>& adj_matrix, vector<int32_t>& row_k, int32_t& k, int32_t& ack_slave_c, int32_t& slave_count, const int32_t& block_total, const int32_t& vertex_total, const int32_t& max_clients, const int32_t& block_size, bool& requested, int32_t& ack, bool& loop)
 {
     int32_t i, n, sd, new_socket, activity;
 
     if(s==0) // state 0
     {
+        puts("[DEBUG] STATE 0");
         build_fd_table(readfds,master_socket,client_socket,max_clients,max_sd);
-        //activity=select(); // poll sockets
+        puts("[DEBUG] FD table built");
+
+        activity = select( max_sd + 1 , &readfds , NULL , NULL , &tv);
+
         if(activity>0)
         {
-            for(i=0; i<max_clients; i++)// all connections
+            puts("[DEBUG] Activity detected ...");
+            if(FD_ISSET(master_socket, &readfds)) // incoming connection
             {
-                //new_socket = accept();
-                if(FD_ISSET(master_socket, &readfds)) // incoming connection
+                puts("[DEBUG] ... on master socket");
+                if ((new_socket = accept(master_socket, (struct sockaddr *)&address, (socklen_t*)&address_len))<0)
                 {
-                    if ((new_socket = accept(master_socket, (struct sockaddr *)&address, (socklen_t*)&address_len))<0)
-                    {
-                        perror("accept");
-                        exit(EXIT_FAILURE);
-                    }
-
-                    // Increment count of number of slaves we'll have to work with
-                    slave_count++;
-
-                    printf("New connection: socket fd=%d , ip=%s , port=%d \n" , new_socket , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
-
-                    // Prepping firwell it dost message.
-                    int32_t size_sizes = 4;
-                    int32_t sizes[size_sizes];
-                    sizes[0] = vertex_total;
-                    sizes[2] = slave_count-1; //setting ID. This will always work, but the harder part of redundancy is incrementing slave_count properly.
-                    sizes[3] = block_total;
-
-                    int32_t send_size;
-                    if(slave_count == vertex_total && vertex_total%block_total>0)
-                    {
-                        puts ("** NON-EVEN CASE (unique end case)");
-                        send_size = vertex_total*(vertex_total%block_total)*sizeof(int32_t);
-                        sizes[1] = send_size;
-
-                        if( send(new_socket, sizes, sizeof(int32_t)*size_sizes, 0) != sizeof(int32_t)*size_sizes )
-                        {
-                            perror("send");
-                        }
-                        puts("** SENT SIZE OF ROW DATA TO RECEIVE");
-                        if( send(new_socket, &adj_matrix[0]+(slave_count-1)*vertex_total*(vertex_total%block_total), send_size, 0) != send_size )
-                        {
-                            perror("send");
-                        }
-                        puts("** SENT ROW DATA");
-                    }
-                    else
-                    {
-                        puts ("** EVEN CASE");
-                        send_size = vertex_total*(block_size)*sizeof(int32_t);
-                        sizes[1] = send_size;
-
-                        if( send(new_socket, sizes, sizeof(int32_t)*size_sizes, 0) != sizeof(int32_t)*size_sizes )
-                        {
-                            perror("send");
-                        }
-                        puts("** SENT SIZE OF ROW DATA TO RECEIVE");
-                        if( send(new_socket, &adj_matrix[0]+(slave_count-1)*vertex_total*block_size, send_size, 0) != send_size )
-                        {
-                            perror("send");
-                        }
-                        puts("** SENT ROW DATA");
-                    }
-
-                    printf("Data sent successfully to slave node %d\n",slave_count-1);
-
-                    //add new socket to array of sockets
-                    for (i=0; i < max_clients; i++)
-                    {
-                        if( client_socket[i] == 0 )
-                        {
-                            client_socket[i] = new_socket;
-                            printf("Adding to list of sockets as %d\n" , i);
-                            break;
-                        }
-                    }
+                    perror("accept");
+                    exit(EXIT_FAILURE);
                 }
 
-                if(slave_count == block_total) // [RED]
+                // Increment count of number of slaves we'll have to work with
+                slave_count++;
+
+                printf("[LOG] New connection: socket fd=%d , ip=%s , port=%d \n" , new_socket , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
+
+                // Prepping firwell it dost message.
+                int32_t size_sizes = 4;
+                int32_t sizes[size_sizes];
+                sizes[0] = vertex_total;
+                sizes[2] = slave_count-1; //setting ID. This will always work, but the harder part of redundancy is incrementing slave_count properly.
+                sizes[3] = block_total;
+
+                int32_t send_size;
+                if(slave_count == vertex_total && vertex_total%block_total>0)
                 {
-                    s=1;
-                    // DEBUG
-                    loop=false;
-                    return;
+                    puts ("[DEBUG] Sending data for unique end case");
+                    send_size = vertex_total*(vertex_total%block_total)*sizeof(int32_t);
+                    sizes[1] = send_size;
+
+                    if( send(new_socket, sizes, sizeof(int32_t)*size_sizes, 0) != sizeof(int32_t)*size_sizes )
+                    {
+                        perror("send");
+                    }
+                    puts("[DEBUG] Sent metadata");
+                    if( send(new_socket, &adj_matrix[0]+(slave_count-1)*vertex_total*(vertex_total%block_total), send_size, 0) != send_size )
+                    {
+                        perror("send");
+                    }
+                    puts("[DEBUG] Sent row data");
                 }
+                else
+                {
+                    puts ("[DEBUG] Sending data for standard end case");
+                    send_size = vertex_total*(block_size)*sizeof(int32_t);
+                    sizes[1] = send_size;
+
+                    if( send(new_socket, sizes, sizeof(int32_t)*size_sizes, 0) != sizeof(int32_t)*size_sizes )
+                    {
+                        perror("send");
+                    }
+                    puts("[DEBUG] Sent metadata");
+                    if( send(new_socket, &adj_matrix[0]+(slave_count-1)*vertex_total*block_size, send_size, 0) != send_size )
+                    {
+                        perror("send");
+                    }
+                    puts("[DEBUG] Sent row data");
+                }
+
+                printf("[LOG] Data sent successfully to slave node id=%d\n",slave_count-1);
+
+                //add new socket to array of sockets
+                for (i=0; i < max_clients; i++)
+                {
+                    if( client_socket[i] == 0 )
+                    {
+                        client_socket[i] = new_socket;
+                        printf("Adding to list of sockets as %d\n" , i);
+                        break;
+                    }
+                }
+            }
+
+            if(slave_count == block_total) // [RED]
+            {
+                s=1;
+                // DEBUG
+                loop=false;
+                return;
             }
         }
     }
@@ -267,7 +269,11 @@ void emscripten_main(fd_set& readfds, const sockaddr_in& address, const int32_t&
 
         if(!requested)
         {
-            // request row k
+            // Request row k
+            printf("STATE 1 : Retrieve row k=%d\n",k);
+            printf("** DEBUG ID=%d\n",k/(block_size));
+            sd = client_socket[k/(block_size)];
+            printf("** DEBUG SOCK_FD=%d\n",client_socket[k/(block_size)]);
             requested=true;
         }
         // n=read(&row_k)
