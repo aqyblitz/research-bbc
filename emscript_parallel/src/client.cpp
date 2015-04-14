@@ -48,13 +48,12 @@ typedef struct {
 static void SendData   (const DataVector& d_vector);
 static void SendAckMsg (const AckMsg&     a_msg);
 static int  get_index  (int i, int j, int w);
-static void relax      (vector<int32_t> &row_k);	
+static void relax      (vector<int32_t> &row_k, int k);	
 void main_loop();
 
 // Global variables
 server_t       server;
 Constants      c;
-StateVars      s;
 
 vector<int32_t> block; // data block
 
@@ -66,7 +65,8 @@ AckMsg       ack_msg;     // For sending acknowledge message back to server.
 std::string server_info = "http://localhost:8888";
 
 void finish(int result) {
-  if (server.fd) {
+  if (server.fd)
+  {
     std::cout << "closing server.fd " << server.fd << " with status " << result << std::endl;
     close(server.fd);
     server.fd = 0;
@@ -80,14 +80,16 @@ void finish(int result) {
 // async_message
 //
 ///////////////////////////////////////////////////////////////////////////////
-void async_message(int clientId, void* userData)
+void async_message(int fd, void* userData)
 { 
-    cout << "async_message called at state " << s.state << endl;
-    if(s.state==0)
+    StateVars* s = (StateVars*) userData;
+
+    cout << "async_message called at state " << s->state << endl;
+    if(s->state==0)
     {
         // post-connection, receive data
         unsigned int messageSize;
-        if (ioctl(server.fd, FIONREAD, &messageSize) != -1)
+        if (ioctl(fd, FIONREAD, &messageSize) != -1)
         {
             cout << "READ | Receiving init data from server | InitVector size: " << messageSize << endl;
             if(messageSize == 0)
@@ -95,7 +97,7 @@ void async_message(int clientId, void* userData)
 
             // Get Message
             char* message = new char[messageSize];
-            recv(server.fd, message, messageSize, 0);
+            recv(fd, message, messageSize, 0);
 
             // De-serialize the data
             {
@@ -113,17 +115,18 @@ void async_message(int clientId, void* userData)
             c.b_t=init_vector.b_t;
             block=init_vector.data;
             // cout << c.v_t << " " << c.id << " " << c.b_t << endl; // ** DEBUG
-            print_block();  
+            //print_block();  
         }
 
-        s.state=1; // only ingest commands
+        s->state=1; // only ingest commands
         cout << "** Client set to process commands\n" << endl;
+        return;
     }
-    if(s.state==1)
+    if(s->state==1)
     {
         // Ingest command.
         unsigned int messageSize;
-        if (ioctl(server.fd, FIONREAD, &messageSize) != -1)
+        if (ioctl(fd, FIONREAD, &messageSize) != -1)
         {
             cout << "READ | CommandVector Size: " << messageSize << endl;
             if(messageSize == 0)
@@ -131,7 +134,7 @@ void async_message(int clientId, void* userData)
 
             // Get Message
             char* message = new char[messageSize];
-            recv(server.fd, message, messageSize, 0);
+            recv(fd, message, messageSize, 0);
 
             // De-serialize the data
             {
@@ -145,27 +148,27 @@ void async_message(int clientId, void* userData)
             delete[] message;
      
             // Read values.
-            s.cmd_s=cmd_vector.c;
-            s.k=cmd_vector.k;
-            cout << "** CMD | code=" << s.cmd_s << " | k=" << s.k << endl;
-            s.base_offset=c.v_t*(s.k-(c.id*(int)ceil( (c.v_t*1.0)/c.b_t))); 
+            s->cmd_s=cmd_vector.c;
+            s->k=cmd_vector.k;
+            cout << "** CMD | code=" << s->cmd_s << " | k=" << s->k << endl;
+            s->base_offset=c.v_t*(s->k-(c.id*(int)ceil( (c.v_t*1.0)/c.b_t))); 
 
-            if(s.cmd_s==0)
+            if(s->cmd_s==0)
             {
                 // Send data.
-                vector<int32_t> temp_data(block.begin()+s.base_offset,block.begin()+s.base_offset+c.v_t);
+                vector<int32_t> temp_data(block.begin()+s->base_offset,block.begin()+s->base_offset+c.v_t);
                 data_vector.data=temp_data;
                 SendData(data_vector);
             }
-            if(s.cmd_s==1)
+            if(s->cmd_s==1)
             {
                 int ack_c=0; // 0 for failure
-                for(int i=0; i<cmd_vector.data.size(); i++)
+                /*for(int i=0; i<cmd_vector.data.size(); i++)
                 {
                     cout << cmd_vector.data[i] << " ";
-                }
+                }*/
                 cout << endl;
-                relax(cmd_vector.data);
+                relax(cmd_vector.data, s->k);
                 ack_c=1; // 1 for success
                 
                 // SendAckMsg
@@ -176,6 +179,17 @@ void async_message(int clientId, void* userData)
             }
         }     
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// async_close
+//
+///////////////////////////////////////////////////////////////////////////////
+void async_close(int fd, void* userData)
+{
+    StateVars* s = (StateVars*) userData;
+    cout << "async_close called" << endl;
 }
 
 void error_callback(int fd, int err, const char* msg, void* userData) {
@@ -193,6 +207,8 @@ void error_callback(int fd, int err, const char* msg, void* userData) {
   }
 }
 
+void main_loop(void* userData) {}
+
 int main() {
   char str[INET_ADDRSTRLEN];
   struct hostent *host = NULL;
@@ -203,6 +219,7 @@ int main() {
   int err;
   int res2;
 
+  StateVars s;
   s.state=0;
 
   memset(&server, 0, sizeof(server_t));
@@ -245,9 +262,10 @@ int main() {
     finish(EXIT_FAILURE);
   }
 
-  emscripten_set_socket_message_callback((void *) NULL, async_message);
+  emscripten_set_socket_message_callback(&s, async_message);
+  emscripten_set_socket_close_callback(&s, async_close);
 
-  //emscripten_set_main_loop(main_loop, 60, 1);
+  emscripten_set_main_loop_arg(main_loop, &s, 60, 1); // had to add this to keep state struct in scope for some reason...
 
   return EXIT_SUCCESS;
 }
@@ -341,7 +359,7 @@ static int get_index(int i, int j, int w)
     return i*w+j;
 }
 
-static void relax(vector<int32_t> &row_k)
+static void relax(vector<int32_t> &row_k, int k)
 {
     cout << "**** Relaxing data" << endl;
     int ind;
@@ -351,7 +369,7 @@ static void relax(vector<int32_t> &row_k)
         for(int j=0;j<c.v_t;j++)
         {
             ind=get_index(i,j,c.v_t);
-            comp_distance = block[get_index(i,s.k,c.v_t)]+row_k[j];
+            comp_distance = block[get_index(i,k,c.v_t)]+row_k[j];
             if(block[ind] > comp_distance)
                 block[ind] = comp_distance;
         }

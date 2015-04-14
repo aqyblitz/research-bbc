@@ -72,7 +72,6 @@ void main_loop();
 server_t           server;
 client_t           client;
 Constants          c;
-StateVars          s;
 fd_set             fdr;
 fd_set             fdw;
 
@@ -131,9 +130,11 @@ void cleanup(int param)
 ///////////////////////////////////////////////////////////////////////////////
 void async_connection(int clientId, void* userData)
 {
+    StateVars* s = (StateVars*) userData;
+
     cout << "async_connection called by clientId " << clientId << endl;
 
-    if(s.state != 0) {
+    if(s->state != 0) {
         cout << "** Connection limit reached: no longer accepting connections" << endl;
         return;
     }
@@ -146,18 +147,18 @@ void async_connection(int clientId, void* userData)
         
         int send_size;
         int offset;
-        init_vector.id=s.conn_count; // THIS IS IMPORTANT TO NOTE: ID assigned in order of connection
-        s.conn_count++;
+        init_vector.id=s->conn_count; // THIS IS IMPORTANT TO NOTE: ID assigned in order of connection
+        s->conn_count++;
     
-        if(s.conn_count == c.block_total && c.vertex_total%c.block_size > 0) // Edge case for last node with rows != vertex_total/block_total
+        if(s->conn_count == c.block_total && c.vertex_total%c.block_size > 0) // Edge case for last node with rows != vertex_total/block_total
         {
             send_size = c.vertex_total*(c.vertex_total-(c.block_total-1)*c.block_size); //*sizeof(int32_t); is not necessary here b/c of how adding to a memory address works.
-            offset = (s.conn_count-1)*c.vertex_total*(int)ceil((1.0*c.vertex_total)/c.block_total);
+            offset = (s->conn_count-1)*c.vertex_total*(int)ceil((1.0*c.vertex_total)/c.block_total);
         }
         else // standard case
         {
             send_size = c.vertex_total*(c.block_size); // see above
-            offset = (s.conn_count-1)*c.vertex_total*c.block_size;
+            offset = (s->conn_count-1)*c.vertex_total*c.block_size;
         }
 
         init_vector.data.assign(&c.adj_matrix[0]+offset,&c.adj_matrix[0]+offset+send_size);
@@ -166,9 +167,10 @@ void async_connection(int clientId, void* userData)
 
         cout << "** succesfully exchanged data with connecting client" << endl;
 
-        if(s.conn_count == c.red_mult*c.block_total) {
-            s.state=1;
+        if(s->conn_count == c.red_mult*c.block_total) {
+            s->state=1;
             cout << "** connection capacity reached | beginning computation\n\n" << endl;
+            return;
         }
         
     }
@@ -181,8 +183,10 @@ void async_connection(int clientId, void* userData)
 ///////////////////////////////////////////////////////////////////////////////
 void async_message(int clientId, void* userData)
 {
+    StateVars* s = (StateVars*) userData;
+
     cout << "async_message called by clientId " << clientId << endl;
-    if(s.state == 1 && s.req_block)
+    if(s->state == 1 && s->req_block)
     { // Receive requested row, then transition to next state and send data out.
         unsigned int messageSize;
         if (ioctl(clientId, FIONREAD, &messageSize) != -1)
@@ -209,11 +213,12 @@ void async_message(int clientId, void* userData)
 
             //row_k=data_vector.data; ** CUT-A            
             cmd_vector.data=data_vector.data; // ** ADD-A
-            s.state=2;
-            s.req_block=false;
+            s->state=2;
+            s->req_block=false;
+            return;
         }
     }
-    if(s.state==3 && s.ack_count<c.block_total*c.red_mult)
+    if(s->state==3 && s->ack_count<c.block_total*c.red_mult)
     {
         unsigned int messageSize;
         if (ioctl(clientId, FIONREAD, &messageSize) != -1)
@@ -238,12 +243,12 @@ void async_message(int clientId, void* userData)
             cout << "** ack | status=" << ack_msg.status << " | id=" << ack_msg.id << endl;
             if(ack_msg.status == 1) // && block ID not acknowledged
             {
-                s.ack_count++;
-                cout << "** ack count incremented | ack_count=" << s.ack_count << endl;
+                s->ack_count++;
+                cout << "** ack count incremented | ack_count=" << s->ack_count << endl;
             }
         }        
     }
-    if(s.state == 4 && s.req_block && s.k<c.vertex_total)
+    if(s->state == 4 && s->req_block && s->k<c.vertex_total)
     {
         unsigned int messageSize;
         if (ioctl(clientId, FIONREAD, &messageSize) != -1)
@@ -272,13 +277,14 @@ void async_message(int clientId, void* userData)
             {
                 solution.push_back(data_vector.data[i]);
             }
-            s.k++;
-            s.req_block=false;
+            s->k++;
+            s->req_block=false;
 
-            if(s.k == c.vertex_total)
+            if(s->k == c.vertex_total)
             {
                 print_solution();
-                s.state=-1;
+                s->state=-1;
+                return;
             }
         }
     }
@@ -291,9 +297,8 @@ void async_message(int clientId, void* userData)
 ///////////////////////////////////////////////////////////////////////////////
 void async_close(int clientId, void* userData)
 {
+    StateVars* s = (StateVars*) userData;
     cout << "async_close called" << endl;
-
-    string fileName;
 
     // Remove the clients file descriptors
     FD_CLR(clientId, &fdr);
@@ -314,23 +319,25 @@ void async_close(int clientId, void* userData)
 ///////////////////////////////////////////////////////////////////////////////
 void main_loop(void* userData)
 {
-    if(s.state==-1)
+    StateVars* s = (StateVars*) userData;
+
+    if(s->state==-1)
     {
         cleanup();
         emscripten_force_exit(0);
     }
-    if(s.state==0) // still waiting on connections
+    if(s->state==0) // still waiting on connections
         return;
-    if(s.state==1 && !s.req_block) // request row
+    if(s->state==1 && !s->req_block) // request row
     {
         cout << "\nSTATE 1 | Requesting row_k, k=" << cmd_vector.k << endl;
-        s.req_block=true;
+        s->req_block=true;
         cmd_vector.c=0; // request code
-        cmd_vector.k=s.k;
+        cmd_vector.k=s->k;
         
-        SendCmd(clients[s.k/(c.block_size)],cmd_vector);   
+        SendCmd(clients[s->k/(c.block_size)],cmd_vector);   
     }
-    if(s.state==2) // send row
+    if(s->state==2) // send row
     {   
         cout << "\nSTATE 2 | Sending row_k, k=" << cmd_vector.k << endl;
         for(int j=0;j<c.block_total*c.red_mult;j++)
@@ -340,35 +347,37 @@ void main_loop(void* userData)
             // cmd_vector.data=row_k; ** CUT-A
             SendCmd(clients[j], cmd_vector);
         }
-        s.state=3;
+        s->state=3;
         cout << "\nSTATE 3 | Counting completion messages" << endl;
+        return;
     }
-    if(s.state==3 && s.ack_count==c.block_total*c.red_mult) // completed counting acknolwedge msgs
+    if(s->state==3 && s->ack_count==c.block_total*c.red_mult) // completed counting acknolwedge msgs
     {
         cout << "\nSTATE 3.5 | All completion messages received for row_k, k=" << cmd_vector.k << endl; 
-        s.ack_count=0;
+        s->ack_count=0;
  
-        if(s.k==c.vertex_total-1)
+        if(s->k==c.vertex_total-1)
         {
-            s.state=4; // finish up
-            s.k=0;
+            s->state=4; // finish up
+            s->k=0;
             cout << "\nSTATE 4 | Computation finshed" << endl;
             return;
         }
         else
         {
-            s.state=1; // continue to iterate
-            s.k++; // s.req_block should already be reset to false here
+            s->state=1; // continue to iterate
+            s->k++; // s->req_block should already be reset to false here
+            return;
         }
     }
-    if(s.state==4 && !s.req_block && s.k<c.vertex_total)
+    if(s->state==4 && !s->req_block && s->k<c.vertex_total)
     {
-        s.req_block=true;
+        s->req_block=true;
         cmd_vector.c=0; // request code
-        cmd_vector.k=s.k;
+        cmd_vector.k=s->k;
         // we can leave data blank
         
-        SendCmd(clients[s.k/(c.block_size)],cmd_vector);
+        SendCmd(clients[s->k/(c.block_size)],cmd_vector);
     }    
 }
 
@@ -386,6 +395,9 @@ int main()
     // Initialize
     cout << "Initializing..." << endl;
     int32_t hard[16] = {0,0,2,0, 4,0,3,0, 0,0,0,2, 0,1,0,0};
+
+
+    StateVars s;
     s.state=0;
     s.conn_count=0;
     s.k=0;
@@ -448,11 +460,11 @@ int main()
     }
 
     // The first parameter being passed is actually an arbitrary userData pointer
-    emscripten_set_socket_connection_callback((void *) NULL, async_connection);
-    emscripten_set_socket_message_callback((void *) NULL, async_message);
-    emscripten_set_socket_close_callback((void *) NULL, async_close);
+    emscripten_set_socket_connection_callback(&s, async_connection);
+    emscripten_set_socket_message_callback(&s, async_message);
+    emscripten_set_socket_close_callback(&s, async_close);
 
-    emscripten_set_main_loop_arg(main_loop, (void *) NULL, 60, 1);
+    emscripten_set_main_loop_arg(main_loop, &s, 60, 1);
 
     return EXIT_SUCCESS;
 }
