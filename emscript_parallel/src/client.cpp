@@ -117,7 +117,7 @@ void async_message(int clientId, void* userData)
         }
 
         s.state=1; // only ingest commands
-        cout << "** Client set to process commands" << endl;
+        cout << "** Client set to process commands\n" << endl;
     }
     if(s.state==1)
     {
@@ -328,7 +328,7 @@ static void SendAckMsg(const AckMsg& a_msg)
             return;
         }
 
-        cout << "Sent completion message: " << tmp.size() << " bytes to server " << endl;
+        cout << "Sent completion message: " << tmp.size() << " bytes to server\n	" << endl;
     }
     catch (...)
     {
