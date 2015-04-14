@@ -293,7 +293,7 @@ void async_close(int clientId, void* userData)
 // main_loop
 //
 ///////////////////////////////////////////////////////////////////////////////
-void main_loop()
+void main_loop(void* userData)
 {
     if(s.state==0) // still waiting on connections
         return;
