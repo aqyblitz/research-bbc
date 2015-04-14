@@ -32,10 +32,26 @@ typedef struct
 typedef struct
 {
     // Variables
+    std::vector<int32_t>         data; // row data from request
+
+    // Serialize Method
+    template <class Archive>
+    void serialize(Archive & archive)
+    {
+        archive(data);
+    }
+} DataVector;
+
+///////////////////////////////////////////////////////////////////////////////
+// InitVector
+///////////////////////////////////////////////////////////////////////////////
+typedef struct
+{
+    // Variables
     int32_t 			   v_t; // vertex_total
     int32_t                      id; // node ID. node_id/(vertex_total/block_total) = node_id/block_size = block_id
     int32_t                      b_t; // block total
-    std::vector<int32_t>     data; // block of adj_matrix
+    std::vector<int32_t>         data; // block of adj_matrix
 
     // Serialize Method
     template <class Archive>
@@ -43,7 +59,7 @@ typedef struct
     {
         archive(v_t, id, b_t, data);
     }
-} DataVector;
+} InitVector;
 
 ///////////////////////////////////////////////////////////////////////////////
 // AckMsg

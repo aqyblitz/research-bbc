@@ -12,13 +12,18 @@
 #include <assert.h>
 #include <iostream>
 #include <netdb.h>
+#include <stdio.h>
+#include <vector>
+#include <string>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
+#include <emscripten/bind.h>
+
+#include "include/structs.h"
 
 using namespace std;
 
-#include "include/structs.h"
 
 void error_callback(int fd, int err, const char* msg, void* userData);
 
@@ -26,21 +31,35 @@ typedef struct {
   int fd;
 } server_t;
 
-#include <emscripten/emscripten.h>
-#include <emscripten/bind.h>
-#include <stdio.h>
-#include <vector>
-#include <string>
+typedef struct {
+  int32_t v_t; // # of vertices in graph
+  int32_t id; // int id of this node. Serves as block identifier for now.
+  int32_t b_t; // # of distinct blocks 
+  int b_s; // # of rows per block
+} Constants;
 
-#include "include/structs.h"
+typedef struct {
+  int state; // encodes overall state of client
+  int cmd_s; // cmd state: 0 or 1
+  int k; // row being requested o relaxed w/ respect to
+  int base_offset; // base_offset
+} StateVars;
 
+static void SendData   (const DataVector& d_vector);
+static void SendAckMsg (const AckMsg&     ack_msg);
 void main_loop();
 
-server_t server;
+// Global variables
+server_t       server;
+Constants      c;
+StateVars      s;
 
-int state;			// TODO: state struct
-bool setup;			// TODO: state struct
-bool sent;			// TODO: state struct
+vector<int32_t> block; // data block
+
+InitVector   init_vector; // For receiving initialization data.
+CmdVector    cmd_vector;  // For receiving commands.
+DataVector   data_vector; // For sending requested row back to server.
+AckMsg       ack_msg;     // For sending acknowledge message back to server.
 
 std::string server_info = "http://localhost:8888";
 
@@ -50,11 +69,8 @@ void finish(int result) {
     close(server.fd);
     server.fd = 0;
   }
-#ifdef __EMSCRIPTEN__
-  emscripten_force_exit();
-#else
-  exit();
-#endif
+
+  exit(0);
 }
 
 static int get_index(int i, int j, int w)
@@ -62,18 +78,18 @@ static int get_index(int i, int j, int w)
     return i*w+j;
 }
 
-void relax(vector<int32_t> &adj_block, int id, vector<int32_t> &row_k, int k, int b_s, int v_t)
+static void relax(vector<int32_t> &row_k)
 {
     int ind;
     int comp_distance;
-    for(int i=0;i<b_s;i++)
+    for(int i=0;i<c.b_s;i++)
     {
-        for(int j=0;j<v_t;j++)
+        for(int j=0;j<c.v_t;j++)
         {
-            ind=get_index(i,j,v_t);
-            comp_distance = adj_block[get_index(i,k,v_t)]+row_k[j];
-            if(adj_block[ind] > comp_distance)
-                adj_block[ind] = comp_distance;
+            ind=get_index(i,j,c.v_t);
+            comp_distance = block[get_index(i,s.k,c.v_t)]+row_k[j];
+            if(block[ind] > comp_distance)
+                block[ind] = comp_distance;
         }
     }
 }
@@ -84,25 +100,85 @@ void relax(vector<int32_t> &adj_block, int id, vector<int32_t> &row_k, int k, in
 //
 ///////////////////////////////////////////////////////////////////////////////
 void async_message(int clientId, void* userData)
-{
-    if(s==0 && setup)
+{ 
+    if(s.state==0)
     {
         // post-connection, receive data
-        // set constants
-        s=1; // only ingest commands
+        unsigned int messageSize;
+        if (ioctl(server.fd, FIONREAD, &messageSize) != -1)
+        {
+            cout << "messageSize: " << messageSize << endl;
+
+            // Get Message
+            char* message = new char[messageSize];
+            recv(server.fd, message, messageSize, 0);
+
+            // De-serialize the data
+            {
+                std::stringstream ss;
+                ss.write(message, messageSize);
+
+                cereal::PortableBinaryInputArchive archive(ss);
+                archive(init_vector);
+            }
+            // Clean up dynamically allocated memory
+            delete[] message;
+
+            c.v_t=init_vector.v_t;
+            c.id=init_vector.id;
+            c.b_t=init_vector.b_t;
+            block=init_vector.data;  
+        }
+
+        s.state=1; // only ingest commands
     }
-    if(s==1)
+    if(s.state==1)
     {
         // Ingest command.
-        if(/*code==0 &&*/)
+        unsigned int messageSize;
+        if (ioctl(server.fd, FIONREAD, &messageSize) != -1)
         {
-        // SendData
+            cout << "messageSize: " << messageSize << endl;
+
+            // Get Message
+            char* message = new char[messageSize];
+            recv(server.fd, message, messageSize, 0);
+
+            // De-serialize the data
+            {
+                std::stringstream ss;
+                ss.write(message, messageSize);
+
+                cereal::PortableBinaryInputArchive archive(ss);
+                archive(cmd_vector);
+            }
+            // Clean up dynamically allocated memory
+            delete[] message;
+     
+            // Read values.
+            s.cmd_s=cmd_vector.c;
+            s.k=cmd_vector.k;
+            s.base_offset=c.v_t*(s.k-(c.id*(int)ceil( (c.v_t*1.0)/c.b_t))); 
         }
-        if(/*code==1 &&*/)
+        if(s.cmd_s==0)
         {
-            // relax(row_k);
-            sent=false;
+            // Send data.
+            vector<int32_t> temp_data(block.begin()+s.base_offset,block.begin()+s.base_offset+c.v_t);
+            data_vector.data=temp_data;
+            SendData(data_vector);
+        }
+        if(s.cmd_s==1)
+        {
+            int ack_c=0; // 0 for failure
+            if(cmd_vector.data.size() == c.v_t)
+            {
+                relax(cmd_vector.data);
+                ack_c=1; // 1 for success
+            }
             // SendAckMsg
+            ack_msg.status=ack_c;
+            ack_msg.id=c.id;
+            SendAckMsg(ack_msg);
         } 
     }
 }
@@ -133,12 +209,10 @@ int main() {
   struct sockaddr_in addr;
   const char *res;
   char buffer[2048];
-  //int err;
+  int err;
   int res2;
 
-  state=0;
-  setup=false;
-  sent=false;
+  s.state=0;
 
   memset(&server, 0, sizeof(server_t));
 
@@ -154,12 +228,12 @@ int main() {
   // connect the socket
   memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
-  addr.sin_port = htons(SOCKK);
+  addr.sin_port = htons(8888); // PORT HARDCODED TO 8888
   
   // gethostbyname_r calls the same stuff as gethostbyname, so we'll test the
   // more complicated one.
   // resolve the hostname to an actual address
-  gethostbyname_r(HOST_NAME, &hostData, buffer, sizeof(buffer), &host, &err);
+  gethostbyname_r("127.0.0.1", &hostData, buffer, sizeof(buffer), &host, &err); // HOSTNAME HARDCODED TO LOCALHOST
   //assert(host->h_addrtype == AF_INET);
   //assert(host->h_length == sizeof(uint32_t));
 
@@ -168,8 +242,8 @@ int main() {
   int *raw_addr = (int*)*raw_addr_list;
   res = inet_ntop(host->h_addrtype, raw_addr, str, INET_ADDRSTRLEN);
   //assert(res);
-   // von
-  if (inet_pton(AF_INET, str, &addr.sin_addr) != 1) { // convert text IP to inary
+
+  if (inet_pton(AF_INET, str, &addr.sin_addr) != 1) { // convert text IP to binary
     perror("inet_pton failed");
     finish(EXIT_FAILURE);
   }
@@ -185,4 +259,88 @@ int main() {
   //emscripten_set_main_loop(main_loop, 60, 1);
 
   return EXIT_SUCCESS;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// SendData
+//
+///////////////////////////////////////////////////////////////////////////////
+static void SendData(const DataVector& d_vector)
+{
+    cout << "SendData called" << endl;
+
+    int res;
+    // Serialize the data
+    try
+    {
+        std::stringstream ss;
+        cereal::PortableBinaryOutputArchive archive(ss);
+        archive(d_vector);
+
+        // Copy the stringstream to a char*
+        const std::string& tmp = ss.str();
+        const char* message = tmp.c_str();
+
+        // Send the message
+        res = send(server.fd, message, tmp.size(), 0);
+
+        if (res == -1) {
+            cout << "ERROR: Exception thrown sending data to server " << endl;
+            return;
+        }
+        else if (res == 0)
+        {
+            // Server disconnected
+            return;
+        }
+
+        cout << "Sent " << tmp.size() << " bytes to server " << endl;
+    }
+    catch (...)
+    {
+        cout << "ERROR: could not serialize row_k data" << endl;
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// SendData
+//
+///////////////////////////////////////////////////////////////////////////////
+static void SendAckMsg(const AckMsg& ack_msg)
+{
+    cout << "SendAckMsg called" << endl;
+
+    int res;
+    // Serialize the data
+    try
+    {
+        std::stringstream ss;
+        cereal::PortableBinaryOutputArchive archive(ss);
+        archive(ack_msg);
+
+        // Copy the stringstream to a char*
+        const std::string& tmp = ss.str();
+        const char* message = tmp.c_str();
+
+        // Send the message
+        res = send(server.fd, message, tmp.size(), 0);
+
+        if (res == -1) {
+            cout << "ERROR: Exception thrown sending ack to server " << endl;
+            return;
+        }
+        else if (res == 0)
+        {
+            // Server disconnected
+            return;
+        }
+
+        cout << "Sent " << tmp.size() << " bytes to server " << endl;
+    }
+    catch (...)
+    {
+        cout << "ERROR: could not serialize ack message" << endl;
+    }
 }
