@@ -24,7 +24,7 @@
 
 using namespace std;
 
-
+static void print_block();
 void error_callback(int fd, int err, const char* msg, void* userData);
 
 typedef struct {
@@ -46,7 +46,9 @@ typedef struct {
 } StateVars;
 
 static void SendData   (const DataVector& d_vector);
-static void SendAckMsg (const AckMsg&     ack_msg);
+static void SendAckMsg (const AckMsg&     a_msg);
+static int  get_index  (int i, int j, int w);
+static void relax      (vector<int32_t> &row_k);	
 void main_loop();
 
 // Global variables
@@ -73,27 +75,6 @@ void finish(int result) {
   exit(0);
 }
 
-static int get_index(int i, int j, int w)
-{
-    return i*w+j;
-}
-
-static void relax(vector<int32_t> &row_k)
-{
-    int ind;
-    int comp_distance;
-    for(int i=0;i<c.b_s;i++)
-    {
-        for(int j=0;j<c.v_t;j++)
-        {
-            ind=get_index(i,j,c.v_t);
-            comp_distance = block[get_index(i,s.k,c.v_t)]+row_k[j];
-            if(block[ind] > comp_distance)
-                block[ind] = comp_distance;
-        }
-    }
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 //
 // async_message
@@ -101,13 +82,16 @@ static void relax(vector<int32_t> &row_k)
 ///////////////////////////////////////////////////////////////////////////////
 void async_message(int clientId, void* userData)
 { 
+    cout << "async_message called at state " << s.state << endl;
     if(s.state==0)
     {
         // post-connection, receive data
         unsigned int messageSize;
         if (ioctl(server.fd, FIONREAD, &messageSize) != -1)
         {
-            cout << "messageSize: " << messageSize << endl;
+            cout << "READ | Receiving init data from server | InitVector size: " << messageSize << endl;
+            if(messageSize == 0)
+                return;
 
             // Get Message
             char* message = new char[messageSize];
@@ -127,10 +111,13 @@ void async_message(int clientId, void* userData)
             c.v_t=init_vector.v_t;
             c.id=init_vector.id;
             c.b_t=init_vector.b_t;
-            block=init_vector.data;  
+            block=init_vector.data;
+            // cout << c.v_t << " " << c.id << " " << c.b_t << endl; // ** DEBUG
+            print_block();  
         }
 
         s.state=1; // only ingest commands
+        cout << "** Client set to process commands" << endl;
     }
     if(s.state==1)
     {
@@ -138,7 +125,9 @@ void async_message(int clientId, void* userData)
         unsigned int messageSize;
         if (ioctl(server.fd, FIONREAD, &messageSize) != -1)
         {
-            cout << "messageSize: " << messageSize << endl;
+            cout << "READ | CommandVector Size: " << messageSize << endl;
+            if(messageSize == 0)
+                return;
 
             // Get Message
             char* message = new char[messageSize];
@@ -158,33 +147,35 @@ void async_message(int clientId, void* userData)
             // Read values.
             s.cmd_s=cmd_vector.c;
             s.k=cmd_vector.k;
+            cout << "** CMD | code=" << s.cmd_s << " | k=" << s.k << endl;
             s.base_offset=c.v_t*(s.k-(c.id*(int)ceil( (c.v_t*1.0)/c.b_t))); 
-        }
-        if(s.cmd_s==0)
-        {
-            // Send data.
-            vector<int32_t> temp_data(block.begin()+s.base_offset,block.begin()+s.base_offset+c.v_t);
-            data_vector.data=temp_data;
-            SendData(data_vector);
-        }
-        if(s.cmd_s==1)
-        {
-            int ack_c=0; // 0 for failure
-            if(cmd_vector.data.size() == c.v_t)
+
+            if(s.cmd_s==0)
             {
+                // Send data.
+                vector<int32_t> temp_data(block.begin()+s.base_offset,block.begin()+s.base_offset+c.v_t);
+                data_vector.data=temp_data;
+                SendData(data_vector);
+            }
+            if(s.cmd_s==1)
+            {
+                int ack_c=0; // 0 for failure
+                for(int i=0; i<cmd_vector.data.size(); i++)
+                {
+                    cout << cmd_vector.data[i] << " ";
+                }
+                cout << endl;
                 relax(cmd_vector.data);
                 ack_c=1; // 1 for success
+                
+                // SendAckMsg
+                ack_msg.status=ack_c;
+                ack_msg.id=c.id;
+                cout << "****** ACK | status=" << ack_msg.status << " | id=" << ack_msg.id << endl;
+                SendAckMsg(ack_msg);
             }
-            // SendAckMsg
-            ack_msg.status=ack_c;
-            ack_msg.id=c.id;
-            SendAckMsg(ack_msg);
-        } 
+        }     
     }
-}
-
-void main_loop() {
-
 }
 
 void error_callback(int fd, int err, const char* msg, void* userData) {
@@ -268,7 +259,7 @@ int main() {
 ///////////////////////////////////////////////////////////////////////////////
 static void SendData(const DataVector& d_vector)
 {
-    cout << "SendData called" << endl;
+    cout << "SEND | Sending requested row_k" << endl;
 
     int res;
     // Serialize the data
@@ -295,7 +286,7 @@ static void SendData(const DataVector& d_vector)
             return;
         }
 
-        cout << "Sent " << tmp.size() << " bytes to server " << endl;
+        cout << "Sent requested data: " << tmp.size() << " bytes to server " << endl;
     }
     catch (...)
     {
@@ -305,12 +296,12 @@ static void SendData(const DataVector& d_vector)
 
 //////////////////////////////////////////////////////////////////////////////
 //
-// SendData
+// SendAckMsg
 //
 ///////////////////////////////////////////////////////////////////////////////
-static void SendAckMsg(const AckMsg& ack_msg)
+static void SendAckMsg(const AckMsg& a_msg)
 {
-    cout << "SendAckMsg called" << endl;
+    cout << "SEND | completion message sending" << endl;
 
     int res;
     // Serialize the data
@@ -318,7 +309,7 @@ static void SendAckMsg(const AckMsg& ack_msg)
     {
         std::stringstream ss;
         cereal::PortableBinaryOutputArchive archive(ss);
-        archive(ack_msg);
+        archive(a_msg);
 
         // Copy the stringstream to a char*
         const std::string& tmp = ss.str();
@@ -337,10 +328,50 @@ static void SendAckMsg(const AckMsg& ack_msg)
             return;
         }
 
-        cout << "Sent " << tmp.size() << " bytes to server " << endl;
+        cout << "Sent completion message: " << tmp.size() << " bytes to server " << endl;
     }
     catch (...)
     {
         cout << "ERROR: could not serialize ack message" << endl;
     }
+}
+
+static int get_index(int i, int j, int w)
+{
+    return i*w+j;
+}
+
+static void relax(vector<int32_t> &row_k)
+{
+    cout << "**** Relaxing data" << endl;
+    int ind;
+    int comp_distance;
+    for(int i=0;i<c.b_s;i++)
+    {
+        for(int j=0;j<c.v_t;j++)
+        {
+            ind=get_index(i,j,c.v_t);
+            comp_distance = block[get_index(i,s.k,c.v_t)]+row_k[j];
+            if(block[ind] > comp_distance)
+                block[ind] = comp_distance;
+        }
+    }
+    cout << "**** Relaxation complete" << endl;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// print_block
+//
+///////////////////////////////////////////////////////////////////////////////
+static void print_block()
+{
+    int n=c.v_t;
+    for(int j=0; j<block.size(); j++)
+    {
+        if(j!=0 && j%n==0)
+            printf("\n");
+        printf("%d ",block[j]);
+    }
+    printf("\n");
 }

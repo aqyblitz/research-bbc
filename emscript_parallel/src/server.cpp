@@ -64,7 +64,7 @@ typedef struct
 // Local function declarations
 static void SendCmd (int clientId, const CmdVector&  c_vector);
 static void SendInit(int clientId, const InitVector& i_vector);
-static void print_adj_matrix(vector<int32_t>& matrix, int n);
+static void print_solution();
 
 void main_loop();
 
@@ -84,7 +84,7 @@ InitVector         init_vector; // For sending initialization data to a node.
 CmdVector          cmd_vector;  // For sending a command 
 
 DataVector         data_vector; // For reading in solution data.
-AckMsg             ack_curr;    // For reading a command
+AckMsg             ack_msg;    // For reading a command
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -96,10 +96,13 @@ void cleanup()
    cout << "cleanup() called" << endl;
 
    //TODO: Update Cleanup
-   if(client.fd)
+   for(int i=0; i<clients.size(); i++)
    {
-      close(client.fd);
-      client.fd = 0;
+       if(clients[i])
+       {
+           close(client.fd);
+           client.fd = 0;
+       }
    }
 
    if(server.fd)
@@ -131,7 +134,7 @@ void async_connection(int clientId, void* userData)
     cout << "async_connection called by clientId " << clientId << endl;
 
     if(s.state != 0) {
-        cout << "connection limit reached: no longer accepting connections" << endl;
+        cout << "** Connection limit reached: no longer accepting connections" << endl;
         return;
     }
 
@@ -144,6 +147,7 @@ void async_connection(int clientId, void* userData)
         int send_size;
         int offset;
         init_vector.id=s.conn_count; // THIS IS IMPORTANT TO NOTE: ID assigned in order of connection
+        s.conn_count++;
     
         if(s.conn_count == c.block_total && c.vertex_total%c.block_size > 0) // Edge case for last node with rows != vertex_total/block_total
         {
@@ -160,12 +164,13 @@ void async_connection(int clientId, void* userData)
         SendInit(clientId, init_vector);
         clients.push_back(clientId); // TODO: not fault-tolerant. make this a map later if you can!
 
-        s.conn_count++;
+        cout << "** succesfully exchanged data with connecting client" << endl;
+
         if(s.conn_count == c.red_mult*c.block_total) {
             s.state=1;
-            cout << "changing states" << endl;
+            cout << "** connection capacity reached | beginning computation\n\n" << endl;
         }
-        cout << "succesfully exchanged data with connecting client" << endl;
+        
     }
 }
 
@@ -180,13 +185,15 @@ void async_message(int clientId, void* userData)
     if(s.state == 1 && s.req_block)
     { // Receive requested row, then transition to next state and send data out.
         unsigned int messageSize;
-        if (ioctl(server.fd, FIONREAD, &messageSize) != -1)
+        if (ioctl(clientId, FIONREAD, &messageSize) != -1)
         {
-            cout << "messageSize: " << messageSize << endl;
+            cout << "READ | requested row_k size: " << messageSize << endl;
+            if(messageSize == 0)
+                return;
 
             // Get Message
             char* message = new char[messageSize];
-            recv(server.fd, message, messageSize, 0);
+            recv(clientId, message, messageSize, 0);
 
             // De-serialize the data
             {
@@ -209,13 +216,15 @@ void async_message(int clientId, void* userData)
     if(s.state==3 && s.ack_count<c.block_total*c.red_mult)
     {
         unsigned int messageSize;
-        if (ioctl(server.fd, FIONREAD, &messageSize) == sizeof(AckMsg))
+        if (ioctl(clientId, FIONREAD, &messageSize) != -1)
         {
-            cout << "ackMessageSize: " << messageSize << endl;
-            
+            cout << "READ | ack message size: " << messageSize << endl;
+            if(messageSize == 0)
+                return;
+
             // Get Message
             char* message = new char[messageSize];
-            recv(server.fd, message, messageSize, 0);
+            recv(clientId, message, messageSize, 0);
 
             // De-serialize the data
             {
@@ -223,25 +232,29 @@ void async_message(int clientId, void* userData)
                 ss.write(message, messageSize);
 
                 cereal::PortableBinaryInputArchive archive(ss);
-                archive(ack_curr);
+                archive(ack_msg);
             }
 
-            if(ack_curr.status == 1) // && block ID not acknowledged
+            cout << "** ack | status=" << ack_msg.status << " | id=" << ack_msg.id << endl;
+            if(ack_msg.status == 1) // && block ID not acknowledged
             {
                 s.ack_count++;
+                cout << "** ack count incremented | ack_count=" << s.ack_count << endl;
             }
         }        
     }
     if(s.state == 4 && s.req_block && s.k<c.vertex_total)
     {
         unsigned int messageSize;
-        if (ioctl(server.fd, FIONREAD, &messageSize) != -1)
+        if (ioctl(clientId, FIONREAD, &messageSize) != -1)
         {
-            cout << "messageSize: " << messageSize << endl;
+            cout << "READ | requested solution row size: " << messageSize << endl;
+            if(messageSize == 0)
+                return;
 
             // Get Message
             char* message = new char[messageSize];
-            recv(server.fd, message, messageSize, 0);
+            recv(clientId, message, messageSize, 0);
 
             // De-serialize the data
             {
@@ -255,12 +268,18 @@ void async_message(int clientId, void* userData)
             // Clean up dynamically allocated memory
             delete[] message;
 
-            for(int i=0; i<messageSize/sizeof(int32_t); i++)
+            for(int i=0; i<data_vector.data.size(); i++)
             {
                 solution.push_back(data_vector.data[i]);
             }
             s.k++;
             s.req_block=false;
+
+            if(s.k == c.vertex_total)
+            {
+                print_solution();
+                s.state=-1;
+            }
         }
     }
 }
@@ -295,19 +314,25 @@ void async_close(int clientId, void* userData)
 ///////////////////////////////////////////////////////////////////////////////
 void main_loop(void* userData)
 {
+    if(s.state==-1)
+    {
+        cleanup();
+        emscripten_force_exit(0);
+    }
     if(s.state==0) // still waiting on connections
         return;
     if(s.state==1 && !s.req_block) // request row
     {
+        cout << "\nSTATE 1 | Requesting row_k, k=" << cmd_vector.k << endl;
         s.req_block=true;
         cmd_vector.c=0; // request code
         cmd_vector.k=s.k;
         
-        SendCmd(clients[s.k/(c.block_size)],cmd_vector);
-        
+        SendCmd(clients[s.k/(c.block_size)],cmd_vector);   
     }
     if(s.state==2) // send row
     {   
+        cout << "\nSTATE 2 | Sending row_k, k=" << cmd_vector.k << endl;
         for(int j=0;j<c.block_total*c.red_mult;j++)
         {
             cmd_vector.c=1;
@@ -316,15 +341,19 @@ void main_loop(void* userData)
             SendCmd(clients[j], cmd_vector);
         }
         s.state=3;
+        cout << "\nSTATE 3 | Counting completion messages" << endl;
     }
     if(s.state==3 && s.ack_count==c.block_total*c.red_mult) // completed counting acknolwedge msgs
     {
+        cout << "\nSTATE 3.5 | All completion messages received for row_k, k=" << cmd_vector.k << endl; 
         s.ack_count=0;
  
         if(s.k==c.vertex_total-1)
         {
             s.state=4; // finish up
             s.k=0;
+            cout << "\nSTATE 4 | Computation finshed" << endl;
+            return;
         }
         else
         {
@@ -340,125 +369,7 @@ void main_loop(void* userData)
         // we can leave data blank
         
         SendCmd(clients[s.k/(c.block_size)],cmd_vector);
-    }
-    
-}
-
-//////////////////////////////////////////////////////////////////////////////
-//
-// SendInit
-//
-///////////////////////////////////////////////////////////////////////////////
-static void SendInit(int clientId, const InitVector& i_vector)
-{
-    cout << "SendInit called" << endl;
-
-    int res;
-
-    if (!FD_ISSET(clientId, &fdw))
-    {
-        cout << "clientId " << clientId << " not set for writing." << endl;
-        return;
-    }
-
-    // Serialize the data
-    try
-    {
-        std::stringstream ss;
-        cereal::PortableBinaryOutputArchive archive(ss);
-        archive(i_vector);
-
-        // Copy the stringstream to a char*
-        const std::string& tmp = ss.str();
-        const char* message = tmp.c_str();
-
-        // Send the message
-        res = send(clientId, message, tmp.size(), 0);
-
-        if (res == -1) {
-            cout << "ERROR: Exception thrown sending data to clientId " << clientId << endl;
-            return;
-        }
-        else if (res == 0)
-        {
-            // Client disconnected
-            memset(&client, 0, sizeof(client_t));
-            return;
-        }
-
-        cout << "Sent " << tmp.size() << " bytes to client " << clientId << endl;
-    }
-    catch (...)
-    {
-        cout << "ERROR: could not serialize the node initialization data" << endl;
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////
-//
-// SendCmd
-//
-///////////////////////////////////////////////////////////////////////////////
-static void SendCmd(int clientId, const CmdVector& c_vector)
-{
-    cout << "SendCmd called" << endl;
-
-    int res;
-
-    if (!FD_ISSET(clientId, &fdw))
-    {
-        cout << "clientId " << clientId << " not set for writing." << endl;
-        return;
-    }
-
-    // Serialize the data
-    try
-    {
-        std::stringstream ss;
-        cereal::PortableBinaryOutputArchive archive(ss);
-        archive(c_vector);
-
-        // Copy the stringstream to a char*
-        const std::string& tmp = ss.str();
-        const char* message = tmp.c_str();
-
-        // Send the message
-        res = send(clientId, message, tmp.size(), 0);
-
-        if (res == -1) {
-            cout << "ERROR: Exception thrown sending data to clientId " << clientId << endl;
-            return;
-        }
-        else if (res == 0)
-        {
-            // Client disconnected
-            memset(&client, 0, sizeof(client_t));
-            return;
-        }
-
-        cout << "Sent " << tmp.size() << " bytes to client " << clientId << endl;
-    }
-    catch (...)
-    {
-        cout << "ERROR: could not serialize the display data" << endl;
-    }
-}
-
-
-///////////////////////////////////////////////////////////////////////////////
-//
-// print_adj_matrix
-//
-///////////////////////////////////////////////////////////////////////////////
-void print_adj_matrix(vector<int32_t>& matrix, int n)
-{
-    for(int j=0; j<matrix.size(); j++)
-    {
-        if(j!=0 && j%n==0)
-            printf("\n");
-        printf("%d ",matrix[j]);
-    }
-    printf("\n");
+    }    
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -489,8 +400,6 @@ int main()
     init_vector.v_t=c.vertex_total;
     init_vector.b_t=c.block_total;
     c.adj_matrix.assign(hard, hard+sizeof(hard)/sizeof(int32_t));
-    //row_k.reserve(c.vertex_total);
-    //solution.reserve(c.vertex_total*c.vertex_total);
 
     FD_ZERO(&fdr);
     FD_ZERO(&fdw);
@@ -546,4 +455,121 @@ int main()
     emscripten_set_main_loop_arg(main_loop, (void *) NULL, 60, 1);
 
     return EXIT_SUCCESS;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// SendInit
+//
+///////////////////////////////////////////////////////////////////////////////
+static void SendInit(int clientId, const InitVector& i_vector)
+{
+    cout << "SEND | Sending client " << clientId << " initialization data" << endl;
+
+    int res;
+
+    if (!FD_ISSET(clientId, &fdw))
+    {
+        cout << "clientId " << clientId << " not set for writing." << endl;
+        return;
+    }
+
+    // Serialize the data
+    try
+    {
+        std::stringstream ss;
+        cereal::PortableBinaryOutputArchive archive(ss);
+        archive(i_vector);
+
+        // Copy the stringstream to a char*
+        const std::string& tmp = ss.str();
+        const char* message = tmp.c_str();
+
+        // Send the message
+        res = send(clientId, message, tmp.size(), 0);
+
+        if (res == -1) {
+            cout << "ERROR: Exception thrown sending data to clientId " << clientId << endl;
+            return;
+        }
+        else if (res == 0)
+        {
+            // Client disconnected
+            memset(&client, 0, sizeof(client_t));
+            return;
+        }
+
+        cout << "Sent " << tmp.size() << " bytes to client " << clientId << endl;
+    }
+    catch (...)
+    {
+        cout << "ERROR: could not serialize the node initialization data" << endl;
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// SendCmd
+//
+///////////////////////////////////////////////////////////////////////////////
+static void SendCmd(int clientId, const CmdVector& c_vector)
+{
+    cout << "SEND | SendCmd called | code=" << cmd_vector.c << " | k=" << cmd_vector.k << endl;
+
+    int res;
+
+    if (!FD_ISSET(clientId, &fdw))
+    {
+        cout << "clientId " << clientId << " not set for writing." << endl;
+        return;
+    }
+
+    // Serialize the data
+    try
+    {
+        std::stringstream ss;
+        cereal::PortableBinaryOutputArchive archive(ss);
+        archive(c_vector);
+
+        // Copy the stringstream to a char*
+        const std::string& tmp = ss.str();
+        const char* message = tmp.c_str();
+
+        // Send the message
+        res = send(clientId, message, tmp.size(), 0);
+
+        if (res == -1) {
+            cout << "ERROR: Exception thrown sending data to clientId " << clientId << endl;
+            return;
+        }
+        else if (res == 0)
+        {
+            // Client disconnected
+            memset(&client, 0, sizeof(client_t));
+            return;
+        }
+
+        cout << "Sent " << tmp.size() << " bytes to client " << clientId << endl;
+    }
+    catch (...)
+    {
+        cout << "ERROR: could not serialize the display data" << endl;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// print_solution
+//
+///////////////////////////////////////////////////////////////////////////////
+static void print_solution()
+{
+    int n=c.vertex_total;
+    for(int j=0; j<solution.size(); j++)
+    {
+        if(j!=0 && j%n==0)
+            printf("\n");
+        printf("%d ",solution[j]);
+    }
+    printf("\n");
 }
