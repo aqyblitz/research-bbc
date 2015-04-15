@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
 	for(int i=0; i<v_count; i++) {
 		for(int j=0; j<v_count; j++) {
 			if(adj_matrix[i*v_count+j] == 0 && i!=j) {
-				dist[i*v_count+j] = std::numeric_limits<int>::max();
+				dist[i*v_count+j] = 1000;//std::numeric_limits<int>::max();
 			}
 			else {
 				dist[i*v_count+j] = adj_matrix[i*v_count+j];
@@ -85,11 +85,12 @@ int main(int argc, char* argv[]) {
 }
 
 void do_floyd_warshall(int d, int* a) {
-	for(int i=0; i<d; i++)
-		for(int j=0; j<d; j++)
-			for(int k=0; k<d; k++) {
+	for(int k=0; k<d; k++)
+		for(int i=0; i<d; i++)
+			for(int j=0; j<d; j++) {
 				int comp = a[i*d+k] + a[k*d+j];
-				if(a[i*d+j] > comp && comp >= 0) { 
+                                
+				if(a[i*d+j] > comp) { 
 					a[i*d+j] = a[i*d+k] + a[k*d+j];
 					//std::cout << a[i*d+j] << " ";
 				}
