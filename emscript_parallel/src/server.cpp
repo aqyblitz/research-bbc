@@ -25,7 +25,8 @@
 // Project Includes
 #include "include/structs.h"
 
-// TODO: Set config file to contain port and # of clients needed.
+// Definitions
+#define INF 1000
 
 // Namespaces
 using namespace std;
@@ -75,7 +76,7 @@ Constants          c;
 fd_set             fdr;
 fd_set             fdw;
 
-//vector<int32_t>    row_k; ** CUT-A
+vector<int32_t>    row_k;
 vector<int>        clients;
 vector<int32_t>    solution;
 
@@ -132,7 +133,7 @@ void async_connection(int clientId, void* userData)
 {
     StateVars* s = (StateVars*) userData;
 
-    cout << "async_connection called by clientId " << clientId << endl;
+    cout << "SOCKET | CALLBACK | async_connection called by client | fd=" << clientId << endl;
 
     if(s->state != 0) {
         cout << "** Connection limit reached: no longer accepting connections" << endl;
@@ -185,7 +186,8 @@ void async_message(int clientId, void* userData)
 {
     StateVars* s = (StateVars*) userData;
 
-    cout << "async_message called by clientId " << clientId << endl;
+    cout << "SOCKET | CALLBACK | async_message called by client | fd=" << clientId << endl;
+
     if(s->state == 1 && s->req_block)
     { // Receive requested row, then transition to next state and send data out.
         unsigned int messageSize;
@@ -210,9 +212,10 @@ void async_message(int clientId, void* userData)
 
             // Clean up dynamically allocated memory
             delete[] message;
-
-            //row_k=data_vector.data; ** CUT-A            
-            cmd_vector.data=data_vector.data; // ** ADD-A
+        
+            //cmd_vector.data=data_vector.data; // Read the data directly into the command vector.
+            // To reduce the size of c=0/2 commands, we'll use a temp var.
+            row_k = data_vector.data;
             s->state=2;
             s->req_block=false;
             return;
@@ -281,8 +284,23 @@ void async_message(int clientId, void* userData)
             s->req_block=false;
 
             if(s->k == c.vertex_total)
-            {
+            {	
+                cout << "\nDeinfinitizing the solution ..." << endl;
+                for(int x=0;x<solution.size();x++)
+                {
+                    if(solution[x]==INF)
+                        solution[x]=0;
+                }
                 print_solution();
+                
+                cmd_vector.c=2;
+                cmd_vector.data.clear();
+                for(int j=0;j<c.block_total*c.red_mult;j++)
+                {
+                    cout << "SEND | sending shutdown signal to attached client | fd=" << clients[j] << endl;	
+                    SendCmd(clients[j], cmd_vector);
+                }
+                
                 s->state=-1;
                 return;
             }
@@ -298,7 +316,7 @@ void async_message(int clientId, void* userData)
 void async_close(int clientId, void* userData)
 {
     StateVars* s = (StateVars*) userData;
-    cout << "async_close called" << endl;
+    cout << "SOCKET | CALLBACK | async_close called" << endl;
 
     // Remove the clients file descriptors
     FD_CLR(clientId, &fdr);
@@ -323,6 +341,7 @@ void main_loop(void* userData)
 
     if(s->state==-1)
     {
+        cout << "\nTERMINAL STATE | computation finished" << endl;
         cleanup();
         emscripten_force_exit(0);
     }
@@ -334,18 +353,20 @@ void main_loop(void* userData)
         s->req_block=true;
         cmd_vector.c=0; // request code
         cmd_vector.k=s->k;
+        cmd_vector.data.clear();
         
         SendCmd(clients[s->k/(c.block_size)],cmd_vector);   
     }
     if(s->state==2) // send row
     {   
         cout << "\nSTATE 2 | Sending row_k, k=" << cmd_vector.k << endl;
+        cmd_vector.c=1;
+        cmd_vector.data=row_k;
+
         for(int j=0;j<c.block_total*c.red_mult;j++)
         {
-            cmd_vector.c=1;
             // k remains at the value set in state 1
-            // cmd_vector.data=row_k; ** CUT-A
-            SendCmd(clients[j], cmd_vector);
+            SendCmd(clients[j], cmd_vector); // data already read directly in
         }
         s->state=3;
         cout << "\nSTATE 3 | Counting completion messages" << endl;
@@ -375,7 +396,7 @@ void main_loop(void* userData)
         s->req_block=true;
         cmd_vector.c=0; // request code
         cmd_vector.k=s->k;
-        // we can leave data blank
+        cmd_vector.data.clear();
         
         SendCmd(clients[s->k/(c.block_size)],cmd_vector);
     }    
@@ -396,7 +417,6 @@ int main()
     cout << "Initializing..." << endl;
     int32_t hard[16] = {0,0,2,0, 4,0,3,0, 0,0,0,2, 0,1,0,0};
 
-
     StateVars s;
     s.state=0;
     s.conn_count=0;
@@ -404,14 +424,28 @@ int main()
     s.ack_count=0;
     s.req_block=false;
     
-    c.block_total=2;
-    c.red_mult=1;
+    c.block_total=BLOCK_TOTAL;
+    c.red_mult=RED_MULT;
     c.vertex_total=4;
-    c.block_size=c.vertex_total/c.block_total;
+
+    c.block_size=ceil((c.vertex_total*1.0)/c.block_total);
 
     init_vector.v_t=c.vertex_total;
     init_vector.b_t=c.block_total;
     c.adj_matrix.assign(hard, hard+sizeof(hard)/sizeof(int32_t));
+
+    // Infinitize
+    for(int i=0; i<c.vertex_total; i++)
+    {
+        for(int j=0; j<c.vertex_total; j++)
+        {
+            if(i!=j)
+            {
+                if(c.adj_matrix[i*c.vertex_total+j] == 0)
+                    c.adj_matrix[i*c.vertex_total+j]=INF;
+            }
+        }
+    }
 
     FD_ZERO(&fdr);
     FD_ZERO(&fdw);
@@ -425,6 +459,8 @@ int main()
     // Create the socket and set to non-blocking
     server.fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 
+    // SERVER_URL for front-end.
+
     if(server.fd == -1)
     {
         perror("cannot create socket");
@@ -435,7 +471,7 @@ int main()
 
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(8888); // HARDCODED PORT=8888
+    addr.sin_port = htons(SOCKK);
 
     if(inet_pton(AF_INET, "0.0.0.0", &addr.sin_addr) != 1)
     {
@@ -511,7 +547,7 @@ static void SendInit(int clientId, const InitVector& i_vector)
             return;
         }
 
-        cout << "Sent " << tmp.size() << " bytes to client " << clientId << endl;
+        cout << "** sent " << tmp.size() << " bytes to client " << clientId << endl;
     }
     catch (...)
     {
@@ -561,7 +597,7 @@ static void SendCmd(int clientId, const CmdVector& c_vector)
             return;
         }
 
-        cout << "Sent " << tmp.size() << " bytes to client " << clientId << endl;
+        cout << "** sent " << tmp.size() << " bytes to client " << clientId << endl;
     }
     catch (...)
     {
@@ -583,5 +619,5 @@ static void print_solution()
             printf("\n");
         printf("%d ",solution[j]);
     }
-    printf("\n");
+    printf("\n\n");
 }

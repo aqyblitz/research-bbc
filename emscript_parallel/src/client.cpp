@@ -22,11 +22,21 @@
 
 #include "include/structs.h"
 
+// Definitions
+#define INF 1000
+
+// Namespace
 using namespace std;
 
+// Function signatures
 static void print_block();
-void error_callback(int fd, int err, const char* msg, void* userData);
+static void SendData   (const DataVector& d_vector);
+static void SendAckMsg (const AckMsg&     a_msg);
+static void relax      (vector<int32_t> &row_k, int k);
+void error_callback(int fd, int err, const char* msg, void* userData);	
+void main_loop();
 
+// Structs
 typedef struct {
   int fd;
 } server_t;
@@ -35,7 +45,7 @@ typedef struct {
   int32_t v_t; // # of vertices in graph
   int32_t id; // int id of this node. Serves as block identifier for now.
   int32_t b_t; // # of distinct blocks 
-  int b_s; // # of rows per block
+  int32_t b_s; // # of rows in this block
 } Constants;
 
 typedef struct {
@@ -43,13 +53,8 @@ typedef struct {
   int cmd_s; // cmd state: 0 or 1
   int k; // row being requested o relaxed w/ respect to
   int base_offset; // base_offset
+  int r_d; // # of rows relaxed
 } StateVars;
-
-static void SendData   (const DataVector& d_vector);
-static void SendAckMsg (const AckMsg&     a_msg);
-static int  get_index  (int i, int j, int w);
-static void relax      (vector<int32_t> &row_k, int k);	
-void main_loop();
 
 // Global variables
 server_t       server;
@@ -72,7 +77,7 @@ void finish(int result) {
     server.fd = 0;
   }
 
-  exit(0);
+  emscripten_force_exit(0);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -84,7 +89,7 @@ void async_message(int fd, void* userData)
 { 
     StateVars* s = (StateVars*) userData;
 
-    cout << "async_message called at state " << s->state << endl;
+    cout << "SOCKET | CALLBACK | async_message called at state " << s->state << endl;
     if(s->state==0)
     {
         // post-connection, receive data
@@ -114,8 +119,9 @@ void async_message(int fd, void* userData)
             c.id=init_vector.id;
             c.b_t=init_vector.b_t;
             block=init_vector.data;
+            c.b_s=block.size()/c.v_t;
             // cout << c.v_t << " " << c.id << " " << c.b_t << endl; // ** DEBUG
-            //print_block();  
+            print_block();  
         }
 
         s->state=1; // only ingest commands
@@ -128,7 +134,7 @@ void async_message(int fd, void* userData)
         unsigned int messageSize;
         if (ioctl(fd, FIONREAD, &messageSize) != -1)
         {
-            cout << "READ | CommandVector Size: " << messageSize << endl;
+            cout << "\nREAD | CommandVector Size: " << messageSize << endl;
             if(messageSize == 0)
                 return;
 
@@ -153,22 +159,26 @@ void async_message(int fd, void* userData)
             cout << "** CMD | code=" << s->cmd_s << " | k=" << s->k << endl;
             s->base_offset=c.v_t*(s->k-(c.id*(int)ceil( (c.v_t*1.0)/c.b_t))); 
 
-            if(s->cmd_s==0)
+            if(s->cmd_s==0) // code=0, data requested --> send it back
             {
                 // Send data.
                 vector<int32_t> temp_data(block.begin()+s->base_offset,block.begin()+s->base_offset+c.v_t);
                 data_vector.data=temp_data;
+
                 SendData(data_vector);
             }
-            if(s->cmd_s==1)
+            if(s->cmd_s==1) // code=1, data received, relax local data --> send ack
             {
-                int ack_c=0; // 0 for failure
+                
                 /*for(int i=0; i<cmd_vector.data.size(); i++)
                 {
                     cout << cmd_vector.data[i] << " ";
-                }*/
-                cout << endl;
+                }
+                cout << endl;*/
+
+                int ack_c;//=0; // 0 for failure
                 relax(cmd_vector.data, s->k);
+                s->r_d++; // increment rows done TODO: front end
                 ack_c=1; // 1 for success
                 
                 // SendAckMsg
@@ -176,6 +186,10 @@ void async_message(int fd, void* userData)
                 ack_msg.id=c.id;
                 cout << "****** ACK | status=" << ack_msg.status << " | id=" << ack_msg.id << endl;
                 SendAckMsg(ack_msg);
+            }
+            if(s->cmd_s==2) // code=2, shut down
+            {
+                finish(1); // TODO: exit codes
             }
         }     
     }
@@ -189,7 +203,7 @@ void async_message(int fd, void* userData)
 void async_close(int fd, void* userData)
 {
     StateVars* s = (StateVars*) userData;
-    cout << "async_close called" << endl;
+    cout << "SOCKET | CALLBACK | async_close called" << endl;
 }
 
 void error_callback(int fd, int err, const char* msg, void* userData) {
@@ -221,6 +235,7 @@ int main() {
 
   StateVars s;
   s.state=0;
+  s.r_d=0;
 
   memset(&server, 0, sizeof(server_t));
 
@@ -236,13 +251,13 @@ int main() {
   // connect the socket
   memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
-  addr.sin_port = htons(8888); // PORT HARDCODED TO 8888
+  addr.sin_port = htons(SOCKK);
   
   // gethostbyname_r calls the same stuff as gethostbyname, so we'll test the
   // more complicated one.
   // resolve the hostname to an actual address
-  gethostbyname_r("127.0.0.1", &hostData, buffer, sizeof(buffer), &host, &err); // HOSTNAME HARDCODED TO LOCALHOST
-  //assert(host->h_addrtype == AF_INET);
+  gethostbyname_r(HOST_NAME, &hostData, buffer, sizeof(buffer), &host, &err); // HOSTNAME HARDCODED TO LOCALHOST
+  //assert(h-ost->h_addrtype == AF_INET);
   //assert(host->h_length == sizeof(uint32_t));
 
   // convert the raw address to a string
@@ -304,7 +319,7 @@ static void SendData(const DataVector& d_vector)
             return;
         }
 
-        cout << "Sent requested data: " << tmp.size() << " bytes to server " << endl;
+        cout << "** sent requested data: " << tmp.size() << " bytes to server " << endl;
     }
     catch (...)
     {
@@ -346,7 +361,7 @@ static void SendAckMsg(const AckMsg& a_msg)
             return;
         }
 
-        cout << "Sent completion message: " << tmp.size() << " bytes to server\n	" << endl;
+        cout << "** sent completion message: " << tmp.size() << " bytes to server\n	" << endl;
     }
     catch (...)
     {
@@ -354,27 +369,27 @@ static void SendAckMsg(const AckMsg& a_msg)
     }
 }
 
-static int get_index(int i, int j, int w)
-{
-    return i*w+j;
-}
-
 static void relax(vector<int32_t> &row_k, int k)
 {
     cout << "**** Relaxing data" << endl;
     int ind;
     int comp_distance;
+
     for(int i=0;i<c.b_s;i++)
     {
         for(int j=0;j<c.v_t;j++)
         {
-            ind=get_index(i,j,c.v_t);
-            comp_distance = block[get_index(i,k,c.v_t)]+row_k[j];
+            ind=i*c.v_t+j;
+            comp_distance = block[i*c.v_t+j]+row_k[j]; // a_ij+a_jk
+
+            if(block[i*c.v_t+k] == INF || row_k[j] == INF)
+                continue;
             if(block[ind] > comp_distance)
                 block[ind] = comp_distance;
         }
     }
     cout << "**** Relaxation complete" << endl;
+    //print_block();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
