@@ -19,8 +19,15 @@
 #include <dirent.h>
 #include <sstream>
 #include <chrono> // Used for testing
-
 #include <emscripten.h>
+
+// TODO: I think I might be a genius. Or not we'll have to see.
+// I can use a map<int,int> to store links between node IDs and socket descriptors. Easy to add and remove from at a whim.
+// This will increase fault tolerance because of some stuff I'll do afterwards.vector<string> files;
+// -- Give new node values obtained by a 0-command to other still working nodes.
+// -- Store the int keys of the downed connections queue: first in, first out.
+// --
+// -- async_close (on the slave?) has to pause and try to ask to get back in.
 
 // Project Includes
 #include "include/structs.h"
@@ -73,12 +80,17 @@ void main_loop();
 server_t           server;
 client_t           client;
 Constants          c;
+StateVars          st;
 fd_set             fdr;
 fd_set             fdw;
-
-vector<int32_t>    row_k;
-vector<int>        clients;
-vector<int32_t>    solution;
+/*
+FILE* file;
+char[33554432]; // 32 MB
+int index=0;
+*/
+vector<int32_t>    row_k;       // Stores the kth row.
+vector<int>        clients;     // TODO: Make this the map above. List of all client fd's.
+vector<int32_t>    solution;    // For taking the solution.
 
 InitVector         init_vector; // For sending initialization data to a node.
 CmdVector          cmd_vector;  // For sending a command 
@@ -415,14 +427,37 @@ int main()
 
     // Initialize
     cout << "Initializing..." << endl;
+/*
+    // Mount the data folder as a NODEFS instance inside of emscripten
+    EM_ASM(
+        FS.mkdir('/data');
+
+        FS.mount(NODEFS, { root: './data' }, '/data');
+    );
+    
+    file = fopen("/data/test.data", "r");
+    assert(file);
+    if (file == NULL)
+         emscripten_force_exit();
+    else
+    {
+        char 
+        while (!feof(file)) // okay just do it line by line.
+        {
+            if (fgets(buffer,100,pFile) == NULL) // reads a line / n-1 
+                 break;
+            fputs(buffer, stdout); // instead of this write buffer bytes to larger buffer.
+        }
+        fclose (pFile);
+    }
+*/
     int32_t hard[16] = {0,0,2,0, 4,0,3,0, 0,0,0,2, 0,1,0,0};
 
-    StateVars s;
-    s.state=0;
-    s.conn_count=0;
-    s.k=0;
-    s.ack_count=0;
-    s.req_block=false;
+    st.state=0;
+    st.conn_count=0;
+    st.k=0;
+    st.ack_count=0;
+    st.req_block=false;
     
     c.block_total=BLOCK_TOTAL;
     c.red_mult=RED_MULT;
@@ -496,11 +531,11 @@ int main()
     }
 
     // The first parameter being passed is actually an arbitrary userData pointer
-    emscripten_set_socket_connection_callback(&s, async_connection);
-    emscripten_set_socket_message_callback(&s, async_message);
-    emscripten_set_socket_close_callback(&s, async_close);
+    emscripten_set_socket_connection_callback(&st, async_connection);
+    emscripten_set_socket_message_callback(&st, async_message);
+    emscripten_set_socket_close_callback(&st, async_close);
 
-    emscripten_set_main_loop_arg(main_loop, &s, 60, 1);
+    emscripten_set_main_loop_arg(main_loop, &st, 60, 1);
 
     return EXIT_SUCCESS;
 }

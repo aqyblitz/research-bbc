@@ -59,6 +59,7 @@ typedef struct {
 // Global variables
 server_t       server;
 Constants      c;
+StateVars      st;
 
 vector<int32_t> block; // data block
 
@@ -89,7 +90,8 @@ void async_message(int fd, void* userData)
 { 
     StateVars* s = (StateVars*) userData;
 
-    cout << "SOCKET | CALLBACK | async_message called at state " << s->state << endl;
+    cout << "\nSOCKET | CALLBACK | async_message called at state " << s->state << endl;
+
     if(s->state==0)
     {
         // post-connection, receive data
@@ -134,7 +136,7 @@ void async_message(int fd, void* userData)
         unsigned int messageSize;
         if (ioctl(fd, FIONREAD, &messageSize) != -1)
         {
-            cout << "\nREAD | CommandVector Size: " << messageSize << endl;
+            cout << "READ | CommandVector Size: " << messageSize << endl;
             if(messageSize == 0)
                 return;
 
@@ -169,13 +171,13 @@ void async_message(int fd, void* userData)
             }
             if(s->cmd_s==1) // code=1, data received, relax local data --> send ack
             {
-                
-                /*for(int i=0; i<cmd_vector.data.size(); i++)
+                /*
+                for(int i=0; i<cmd_vector.data.size(); i++)
                 {
                     cout << cmd_vector.data[i] << " ";
                 }
-                cout << endl;*/
-
+                cout << endl;
+                */
                 int ack_c;//=0; // 0 for failure
                 relax(cmd_vector.data, s->k);
                 s->r_d++; // increment rows done TODO: front end
@@ -233,9 +235,8 @@ int main() {
   int err;
   int res2;
 
-  StateVars s;
-  s.state=0;
-  s.r_d=0;
+  st.state=0;
+  st.r_d=0;
 
   memset(&server, 0, sizeof(server_t));
 
@@ -277,10 +278,10 @@ int main() {
     finish(EXIT_FAILURE);
   }
 
-  emscripten_set_socket_message_callback(&s, async_message);
-  emscripten_set_socket_close_callback(&s, async_close);
+  emscripten_set_socket_message_callback(&st, async_message);
+  emscripten_set_socket_close_callback(&st, async_close);
 
-  emscripten_set_main_loop_arg(main_loop, &s, 60, 1); // had to add this to keep state struct in scope for some reason...
+  emscripten_set_main_loop_arg(main_loop, &st, 60, 1); // had to add this to keep state struct in scope for some reason...
 
   return EXIT_SUCCESS;
 }
@@ -361,7 +362,7 @@ static void SendAckMsg(const AckMsg& a_msg)
             return;
         }
 
-        cout << "** sent completion message: " << tmp.size() << " bytes to server\n	" << endl;
+        cout << "** sent completion message: " << tmp.size() << " bytes to server" << endl;
     }
     catch (...)
     {
@@ -380,7 +381,8 @@ static void relax(vector<int32_t> &row_k, int k)
         for(int j=0;j<c.v_t;j++)
         {
             ind=i*c.v_t+j;
-            comp_distance = block[i*c.v_t+j]+row_k[j]; // a_ij+a_jk
+            comp_distance = block[i*c.v_t+k]+row_k[j]; // a_ik+a_jk
+            //cout << "** COMP | a_ik+a_jk=" << comp_distance << " | a_ij=" << block[ind] << endl;
 
             if(block[i*c.v_t+k] == INF || row_k[j] == INF)
                 continue;
