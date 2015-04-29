@@ -40,7 +40,7 @@ int main(int argc, char* argv[]) {
 			names[i] = temp[0];
 			temp.erase(temp.begin());
 			//std::vector<std::string> sub_vec(temp.begin()+1, sub_vec.end());
-                        //file_by_line[i] = &sub_vec;
+                       //file_by_line[i] = &sub_vec;
 			file_by_line[i] = temp;
 			//std::cout << names[i] << '\n';
 			i++;

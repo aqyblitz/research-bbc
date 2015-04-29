@@ -25,7 +25,7 @@ module.exports = function (grunt) {
             },
             server: {
                 cwd: 'src',
-                cmd: 'em++ server.cpp -o ../run/server.js -DSOCKK=<%= config.socketPort %> -DSERVER_URL="\\"<%= config.protocol %>://<%= config.host %>:<%= config.port %>\\"" -DBLOCK_TOTAL=<%= pconfig.blockTotal %> -DRED_MULT=<%= pconfig.redMult %> -I include/ -std=c++11 -s ALLOW_MEMORY_GROWTH=1'
+                cmd: 'em++ server.cpp -o ../run/server.js -DSOCKK=<%= config.socketPort %> -DSERVER_URL="\\"<%= config.protocol %>://<%= config.host %>:<%= config.port %>\\"" -DBLOCK_TOTAL=<%= pconfig.blockTotal %> -DRED_MULT=<%= pconfig.redMult %> -DVERTEX_TOTAL=<%= pconfig.vertexTotal %> -I include/ -std=c++11 -s ALLOW_MEMORY_GROWTH=1'
             }
         }
     });
@@ -33,11 +33,16 @@ module.exports = function (grunt) {
     grunt.registerTask('compile', [
         'exec'
     ]);
-    
+ 
+
+    grunt.registerTask('compile-parallel', [
+        'exec:server',
+        'exec:client'
+    ]);   
     grunt.registerTask('compile-client', [
         'exec:client'
     ]);
-        grunt.registerTask('compile-server', [
+    grunt.registerTask('compile-server', [
         'exec:server'
     ]);
 

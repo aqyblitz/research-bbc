@@ -18,6 +18,8 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <sstream>
+#include <fstream>
+
 #include <chrono> // Used for testing
 #include <emscripten.h>
 
@@ -83,11 +85,7 @@ Constants          c;
 StateVars          st;
 fd_set             fdr;
 fd_set             fdw;
-/*
-FILE* file;
-char[33554432]; // 32 MB
-int index=0;
-*/
+
 vector<int32_t>    row_k;       // Stores the kth row.
 vector<int>        clients;     // TODO: Make this the map above. List of all client fd's.
 vector<int32_t>    solution;    // For taking the solution.
@@ -427,31 +425,50 @@ int main()
 
     // Initialize
     cout << "Initializing..." << endl;
-/*
+
     // Mount the data folder as a NODEFS instance inside of emscripten
     EM_ASM(
         FS.mkdir('/data');
-
-        FS.mount(NODEFS, { root: './data' }, '/data');
+        FS.mount(NODEFS, { root: '../data' }, '/data');
     );
-    
-    file = fopen("/data/test.data", "r");
-    assert(file);
-    if (file == NULL)
-         emscripten_force_exit();
+
+    ifstream file("/data/test.data");
+    string ln;
+    if(file.is_open())
+    {
+        string temp=""; // for parsing numbers
+        for(int j=0; j<VERTEX_TOTAL; j++)
+        {
+            try
+            {
+                getline(file,ln);
+            }
+            catch(int e)
+            {
+                cout << "ERROR | Could not read enough lines from file" << endl;
+                emscripten_force_exit(0);
+            }
+cout << ln << endl;
+            for(int i=0; i<ln.length(); i++)
+            {
+                if(ln.at(i) == ' ')
+                {
+                    c.adj_matrix.push_back( atoi(temp.c_str()) );
+                    temp=""; // reset the number to feed into atoi
+                    continue;
+                }
+                temp.append(1,ln.at(i));
+            }
+            // gotta take care of the last number as well
+            c.adj_matrix.push_back( atoi(temp.c_str()) );
+            temp="";
+        }
+    }
     else
     {
-        char 
-        while (!feof(file)) // okay just do it line by line.
-        {
-            if (fgets(buffer,100,pFile) == NULL) // reads a line / n-1 
-                 break;
-            fputs(buffer, stdout); // instead of this write buffer bytes to larger buffer.
-        }
-        fclose (pFile);
+        cout << "ERROR | File could not be loaded" << endl;
+        emscripten_force_exit(0);
     }
-*/
-    int32_t hard[16] = {0,0,2,0, 4,0,3,0, 0,0,0,2, 0,1,0,0};
 
     st.state=0;
     st.conn_count=0;
@@ -461,13 +478,14 @@ int main()
     
     c.block_total=BLOCK_TOTAL;
     c.red_mult=RED_MULT;
-    c.vertex_total=4;
+    c.vertex_total=VERTEX_TOTAL;
 
-    c.block_size=ceil((c.vertex_total*1.0)/c.block_total);
+    c.block_size=ceil((c.vertex_total*1.0)/c.block_total); // NOTE: because of our use of ceil(), our block size will always produce a partition that works. The higher the tens decimal of the internal value, the more optimal our distribution our work is, with respect to the final node. 
 
     init_vector.v_t=c.vertex_total;
     init_vector.b_t=c.block_total;
-    c.adj_matrix.assign(hard, hard+sizeof(hard)/sizeof(int32_t));
+    //int32_t hard[16] = {0,0,2,0, 4,0,3,0, 0,0,0,2, 0,1,0,0};
+    //c.adj_matrix.assign(hard, hard+sizeof(hard)/sizeof(int32_t));
 
     // Infinitize
     for(int i=0; i<c.vertex_total; i++)

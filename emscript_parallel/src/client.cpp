@@ -33,6 +33,7 @@ static void print_block();
 static void SendData   (const DataVector& d_vector);
 static void SendAckMsg (const AckMsg&     a_msg);
 static void relax      (vector<int32_t> &row_k, int k);
+bool check_source(int k);
 void error_callback(int fd, int err, const char* msg, void* userData);	
 void main_loop();
 
@@ -42,18 +43,19 @@ typedef struct {
 } server_t;
 
 typedef struct {
-  int32_t v_t; // # of vertices in graph
-  int32_t id; // int id of this node. Serves as block identifier for now.
-  int32_t b_t; // # of distinct blocks 
-  int32_t b_s; // # of rows in this block
+  int32_t v_t;       // # of vertices in graph
+  int32_t id;        // int id of this node. Serves as block identifier for now.
+  int32_t b_t;       // # of distinct blocks 
+  int32_t b_s;       // # of rows in this block
 } Constants;
 
 typedef struct {
-  int state; // encodes overall state of client
-  int cmd_s; // cmd state: 0 or 1
-  int k; // row being requested o relaxed w/ respect to
-  int base_offset; // base_offset
-  int r_d; // # of rows relaxed
+  int state;         // encodes overall state of client
+  int cmd_s;         // cmd state: 0 or 1
+  int k;             // row being requested o relaxed w/ respect to
+  int base_offset;   // base_offset
+  int r_d;           // # of rows relaxed
+  bool isSource;     // whether or not this client node is the source node
 } StateVars;
 
 // Global variables
@@ -168,8 +170,13 @@ void async_message(int fd, void* userData)
                 data_vector.data=temp_data;
 
                 SendData(data_vector);
+                s->isSource = check_source(s->k);
+                if(s->isSource)
+                {
+                    relax(temp_data, s->k);
+                }
             }
-            if(s->cmd_s==1) // code=1, data received, relax local data --> send ack
+            if(s->cmd_s==1 || s->isSource) // code=1, data received OR this is the source --> relax local data --> send ack
             {
                 /*
                 for(int i=0; i<cmd_vector.data.size(); i++)
@@ -179,7 +186,7 @@ void async_message(int fd, void* userData)
                 cout << endl;
                 */
                 int ack_c;//=0; // 0 for failure
-                relax(cmd_vector.data, s->k);
+                relax(cmd_vector.data, s->k); // this k-value will work for both cases
                 s->r_d++; // increment rows done TODO: front end
                 ack_c=1; // 1 for success
                 
@@ -188,6 +195,7 @@ void async_message(int fd, void* userData)
                 ack_msg.id=c.id;
                 cout << "****** ACK | status=" << ack_msg.status << " | id=" << ack_msg.id << endl;
                 SendAckMsg(ack_msg);
+                s->isSource=false;
             }
             if(s->cmd_s==2) // code=2, shut down
             {
@@ -237,6 +245,7 @@ int main() {
 
   st.state=0;
   st.r_d=0;
+  st.isSource=false;
 
   memset(&server, 0, sizeof(server_t));
 
@@ -392,6 +401,17 @@ static void relax(vector<int32_t> &row_k, int k)
     }
     cout << "**** Relaxation complete" << endl;
     //print_block();
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// check_source
+//
+///////////////////////////////////////////////////////////////////////////////
+bool check_source(int k)
+{
+    return false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
