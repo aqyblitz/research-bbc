@@ -24,6 +24,7 @@ C++ code that can be compiled and run as such.
 The code takes a command line parameter that points to a local input file with the graph stored as an adjacency matrix. The input data should have a graph that is unweighted, since we chose not to use the max integer value to simulate infinity and implement arithmetic overflow checks; this is because achieving a working implementation was prioritized. See the sample input data for formatting.
 
 `./a.out <path_to_file>`
+
 `path_to_file` is a path to the input data file.
 
 =========
@@ -32,10 +33,12 @@ C++ code that can be compiled and run as such.
 
 ##### Compilation
 Server: `g++ -o server server.cpp`
+
 Client: `g++ -o client client.cpp`
 
 ##### Usage
 `./server <num_blocks> <red_mult> <vertex_total>`
+
 The server default to run on port 8888.
 `num_blocks` is the total number of blocks/partitions.
 `red_mult` is the redundancy multiplier for fault tolerance. Setting this to any value but `1` will break the code.
@@ -44,6 +47,7 @@ The server default to run on port 8888.
 This code has not been set up to accept local file input, but has a hard-coded example in the server code, the reason being that this was a proof-of-concept of the algorithm’s implementation.
 
 `./client <host> <port_num>`
+
 `host` and `port_num` form the address of the server to which this replica (client) should connect.
 
 In order for this code to run, an ADDITIONAL client MUST connect to the server, for no purpose other than to receive nonsense output across the socket stream. We could not figure out why this happened.
@@ -94,6 +98,7 @@ There are two configuration files that contain information regarding the problem
 The JavaScript can be run from the `/run` directory.
 
 Server: `node server.js`
+
 Client: `node client.js`
 
 Computation on the problem does not begin until a sufficient number (i.e. the # of partitions of the adjacency matrix) of clients have connected to the server.
