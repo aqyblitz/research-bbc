@@ -25,6 +25,7 @@ The code takes a command line parameter that points to a local input file with t
 
 `./a.out <path_to_file>`
 `path_to_file` is a path to the input data file.
+
 =========
 #### simple_parallel
 C++ code that can be compiled and run as such.
@@ -44,6 +45,7 @@ This code has not been set up to accept local file input, but has a hard-coded e
 
 `./client <host> <port_num>`
 `host` and `port_num` form the address of the server to which this replica (client) should connect.
+
 =========
 #### emscript_parallel
 This is an asynchronous parallelization of the FW algorithm, using the primary/replica architecture. The source files are located in `<root_dir>/src/`.
@@ -73,13 +75,13 @@ Note: The bug requiring an extra client to connect is not present in the Emscrip
 There are two configuration files that contain information regarding the problem parameters and server parameters.
 
 ###### problemConfig.json
-blockTotal: the total number of blocks, and therefore partitions, the input adjacency matrix is split into.
+`blockTotal`: the total number of blocks, and therefore partitions, the input adjacency matrix is split into.
 
-redMult: the redundancy multiplier for fault tolerance & a robust system. This is NOT functional yet; setting this value to anything but `1` will break the program.
+`redMult`: the redundancy multiplier for fault tolerance & a robust system. This is NOT functional yet; setting this value to anything but `1` will break the program.
 
-vertexTotal: the number of vertices in the input graph.
+`vertexTotal`: the number of vertices in the input graph.
 
 ###### serverConfig.json
-socketPort: the port on the server that is opened for clients to connect to.
+`socketPort`: the port on the server that is opened for clients to connect to.
 
-host: the client connects to the server at this IP address with `socketPort`.
+`host`: the client connects to the server at this IP address with `socketPort`.
