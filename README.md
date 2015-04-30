@@ -25,9 +25,6 @@ The code takes a command line parameter that points to a local input file with t
 
 `./a.out <path_to_file>`
 `path_to_file` is a path to the input data file.
-
-### Note
-These parallel implementations take user-specified parameters to partition input into blocks. The number of blocks CANNOT exceed the number of vertices in the graph. There exists code to fit the logic of assigning multiple replica nodes to operate on the same partitions of data to create a more robust and fault tolerant system, but the functionality has not been completed.
 =========
 #### simple_parallel
 C++ code that can be compiled and run as such.
