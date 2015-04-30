@@ -46,9 +46,13 @@ This code has not been set up to accept local file input, but has a hard-coded e
 `./client <host> <port_num>`
 `host` and `port_num` form the address of the server to which this replica (client) should connect.
 
+In order for this code to run, an ADDITIONAL client MUST connect to the server, for no purpose other than to receive nonsense output across the socket stream. We could not figure out why this happened.
+
 =========
 #### emscript_parallel
 This is an asynchronous parallelization of the FW algorithm, using the primary/replica architecture. The source files are located in `<root_dir>/src/`.
+
+The bug requiring an extra & useless client is not present in this implementation.
 
 ##### Installation
 [Emscripten](http://kripken.github.io/emsripten-site), [nodejs](http://nodejs.org), and [npm](https://www.npmjs.com/) must be installed properly to run this code. Note that node comes with Emscripten.
@@ -85,3 +89,11 @@ There are two configuration files that contain information regarding the problem
 `socketPort`: the port on the server that is opened for clients to connect to.
 
 `host`: the client connects to the server at this IP address with `socketPort`.
+
+###### Running the code
+The JavaScript can be run from the `/run` directory.
+
+Server: `node server.js`
+Client: `node client.js`
+
+Computation on the problem does not begin until a sufficient number (i.e. the # of partitions of the adjacency matrix) of clients have connected to the server.
