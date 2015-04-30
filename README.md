@@ -13,9 +13,7 @@ Emscripten is a Mozilla utility that produces JavaScript from LLVM bytecode, whi
 3. emscript_parallel
   * Following the logic employed in developing the “simple” parallel solution above, we adapted the logistics of the algorithm to fit an asynchronous patter. This was to leverage the asynchronous callback and main loop architecture that Emscripten offers us to produce an effective JavaScript-based solution.
 
-### Usage
 =========
-
 #### simple_serial
 C++ code that can be compiled and run as such. 
 
@@ -30,7 +28,7 @@ The code takes a command line parameter that points to a local input file with t
 
 ### Note
 These parallel implementations take user-specified parameters to partition input into blocks. The number of blocks CANNOT exceed the number of vertices in the graph. There exists code to fit the logic of assigning multiple replica nodes to operate on the same partitions of data to create a more robust and fault tolerant system, but the functionality has not been completed.
-
+=========
 #### simple_parallel
 C++ code that can be compiled and run as such.
 
@@ -49,7 +47,7 @@ This code has not been set up to accept local file input, but has a hard-coded e
 
 `./client <host> <port_num>`
 `host` and `port_num` form the address of the server to which this replica (client) should connect.
-
+=========
 #### emscript_parallel
 This is an asynchronous parallelization of the FW algorithm, using the primary/replica architecture. The source files are located in `<root_dir>/src/`.
 
