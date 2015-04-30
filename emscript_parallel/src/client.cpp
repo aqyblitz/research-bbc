@@ -34,8 +34,7 @@ static void SendData   (const DataVector& d_vector);
 static void SendAckMsg (const AckMsg&     a_msg);
 static void relax      (vector<int32_t> &row_k, int k);
 bool check_source(int k);
-void error_callback(int fd, int err, const char* msg, void* userData);	
-void main_loop();
+void error_callback(int fd, int err, const char* msg, void* userData);
 
 // Structs
 typedef struct {
@@ -86,6 +85,12 @@ void finish(int result) {
 ///////////////////////////////////////////////////////////////////////////////
 //
 // async_message
+//
+// Assumptions:
+// State 0
+//    - init_vector correctly assigned in server
+// State 1
+//    - 0 <= cmd_vector.c <= 2
 //
 ///////////////////////////////////////////////////////////////////////////////
 void async_message(int fd, void* userData)
@@ -178,13 +183,6 @@ void async_message(int fd, void* userData)
             }
             if(s->cmd_s==1 || s->isSource) // code=1, data received OR this is the source --> relax local data --> send ack
             {
-                /*
-                for(int i=0; i<cmd_vector.data.size(); i++)
-                {
-                    cout << cmd_vector.data[i] << " ";
-                }
-                cout << endl;
-                */
                 int ack_c;//=0; // 0 for failure
                 relax(cmd_vector.data, s->k); // this k-value will work for both cases
                 s->r_d++; // increment rows done TODO: front end
@@ -290,8 +288,6 @@ int main() {
   emscripten_set_socket_message_callback(&st, async_message);
   emscripten_set_socket_close_callback(&st, async_close);
 
-  emscripten_set_main_loop_arg(main_loop, &st, 60, 1); // had to add this to keep state struct in scope for some reason...
-
   return EXIT_SUCCESS;
 }
 
@@ -391,7 +387,6 @@ static void relax(vector<int32_t> &row_k, int k)
         {
             ind=i*c.v_t+j;
             comp_distance = block[i*c.v_t+k]+row_k[j]; // a_ik+a_jk
-            //cout << "** COMP | a_ik+a_jk=" << comp_distance << " | a_ij=" << block[ind] << endl;
 
             if(block[i*c.v_t+k] == INF || row_k[j] == INF)
                 continue;
@@ -400,7 +395,6 @@ static void relax(vector<int32_t> &row_k, int k)
         }
     }
     cout << "**** Relaxation complete" << endl;
-    //print_block();
 }
 
 

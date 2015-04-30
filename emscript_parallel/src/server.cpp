@@ -16,20 +16,11 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <dirent.h>
 #include <sstream>
 #include <fstream>
 
 #include <chrono> // Used for testing
 #include <emscripten.h>
-
-// TODO: I think I might be a genius. Or not we'll have to see.
-// I can use a map<int,int> to store links between node IDs and socket descriptors. Easy to add and remove from at a whim.
-// This will increase fault tolerance because of some stuff I'll do afterwards.vector<string> files;
-// -- Give new node values obtained by a 0-command to other still working nodes.
-// -- Store the int keys of the downed connections queue: first in, first out.
-// --
-// -- async_close (on the slave?) has to pause and try to ask to get back in.
 
 // Project Includes
 #include "include/structs.h"
@@ -138,6 +129,10 @@ void cleanup(int param)
 //
 // async_connection
 //
+// Assumptions:
+// State 0
+//    - Waits for c.block_total clients
+//
 ///////////////////////////////////////////////////////////////////////////////
 void async_connection(int clientId, void* userData)
 {
@@ -187,9 +182,18 @@ void async_connection(int clientId, void* userData)
     }
 }
 
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 // async_message
+//
+// Assumptions:
+// State 1
+//    - cmd_vector.c = 0
+//    - req_block = true
+// State 3
+//    - cmd_vector.c = 1
+//    - cmd_vector.data = row_k
 //
 ///////////////////////////////////////////////////////////////////////////////
 void async_message(int clientId, void* userData)
@@ -223,7 +227,6 @@ void async_message(int clientId, void* userData)
             // Clean up dynamically allocated memory
             delete[] message;
         
-            //cmd_vector.data=data_vector.data; // Read the data directly into the command vector.
             // To reduce the size of c=0/2 commands, we'll use a temp var.
             row_k = data_vector.data;
             s->state=2;
@@ -344,6 +347,13 @@ void async_close(int clientId, void* userData)
 //
 // main_loop
 //
+// Assumptions:
+// All fields in StateVars struct input are set.
+// State 1
+//    - s->k < VERTEX_TOTAL
+// State 3
+//    - s->req_block = false
+//
 ///////////////////////////////////////////////////////////////////////////////
 void main_loop(void* userData)
 {
@@ -448,7 +458,7 @@ int main()
                 cout << "ERROR | Could not read enough lines from file" << endl;
                 emscripten_force_exit(0);
             }
-cout << ln << endl;
+
             for(int i=0; i<ln.length(); i++)
             {
                 if(ln.at(i) == ' ')
@@ -484,8 +494,6 @@ cout << ln << endl;
 
     init_vector.v_t=c.vertex_total;
     init_vector.b_t=c.block_total;
-    //int32_t hard[16] = {0,0,2,0, 4,0,3,0, 0,0,0,2, 0,1,0,0};
-    //c.adj_matrix.assign(hard, hard+sizeof(hard)/sizeof(int32_t));
 
     // Infinitize
     for(int i=0; i<c.vertex_total; i++)

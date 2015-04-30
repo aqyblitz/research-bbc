@@ -1,6 +1,4 @@
 {
-    "protocol": "http",
     "host": "localhost",
-    "port": "8080",
     "socketPort": "8888"
 }

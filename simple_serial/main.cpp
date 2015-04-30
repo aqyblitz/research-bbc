@@ -34,15 +34,11 @@ int main(int argc, char* argv[]) {
 	// Store names, load up the split vectors.
 	if(data_file.is_open()) {
 		while(getline(data_file,line)) {
-			//std::cout << line << '\n';
-
+			
 			temp = split(line,' ');
 			names[i] = temp[0];
 			temp.erase(temp.begin());
-			//std::vector<std::string> sub_vec(temp.begin()+1, sub_vec.end());
-                       //file_by_line[i] = &sub_vec;
 			file_by_line[i] = temp;
-			//std::cout << names[i] << '\n';
 			i++;
 		}
 		data_file.close();
@@ -64,7 +60,7 @@ int main(int argc, char* argv[]) {
 	for(int i=0; i<v_count; i++) {
 		for(int j=0; j<v_count; j++) {
 			if(adj_matrix[i*v_count+j] == 0 && i!=j) {
-				dist[i*v_count+j] = 1000;//std::numeric_limits<int>::max();
+				dist[i*v_count+j] = 1000;
 			}
 			else {
 				dist[i*v_count+j] = adj_matrix[i*v_count+j];
@@ -92,13 +88,12 @@ void do_floyd_warshall(int d, int* a) {
                                 
 				if(a[i*d+j] > comp) { 
 					a[i*d+j] = a[i*d+k] + a[k*d+j];
-					//std::cout << a[i*d+j] << " ";
 				}
 			}
 	return;
 }
 
-// Found these split methods on Stack Overflow. Nice.
+// Found these split methods on Stack Overflow.
 std::vector<std::string> &split(const std::string &s, char delim, std::vector<std::string> &elems) {
 	std::stringstream ss(s);
 	std::string item;
