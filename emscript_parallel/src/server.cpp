@@ -26,7 +26,7 @@
 #include "include/structs.h"
 
 // Definitions
-#define INF 1000
+#define INF 100000
 
 // Namespaces
 using namespace std;
@@ -442,7 +442,10 @@ int main()
         FS.mount(NODEFS, { root: '../data' }, '/data');
     );
 
-    ifstream file("/data/test.data");
+    string file_path="/data/";
+    file_path.append(FILE_PATH);
+
+    ifstream file(file_path);
     string ln;
     if(file.is_open())
     {

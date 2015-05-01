@@ -1,4 +1,5 @@
 {
     "host": "localhost",
-    "socketPort": "8888"
+    "socketPort": "8888",
+    "filePath": "test1.in"
 }
