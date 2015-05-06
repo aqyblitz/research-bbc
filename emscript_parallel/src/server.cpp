@@ -305,15 +305,7 @@ void async_message(int clientId, void* userData)
                         solution[x]=0;
                 }
                 print_solution();
-                
-                cmd_vector.c=2;
-                cmd_vector.data.clear();
-                for(int j=0;j<c.block_total*c.red_mult;j++)
-                {
-                    cout << "SEND | sending shutdown signal to attached client | fd=" << clients[j] << endl;	
-                    SendCmd(clients[j], cmd_vector);
-                }
-                
+
                 s->state=-1;
                 return;
             }
@@ -362,6 +354,14 @@ void main_loop(void* userData)
     if(s->state==-1)
     {
         cout << "\nTERMINAL STATE | computation finished" << endl;
+        cmd_vector.c=2;
+        cmd_vector.data.clear();
+        for(int j=0;j<c.block_total*c.red_mult;j++)
+        {
+          cout << "SEND | sending shutdown signal to attached client | fd=" << clients[j] << endl;	
+          SendCmd(clients[j], cmd_vector);
+        }
+        
         cleanup();
         emscripten_force_exit(0);
     }
