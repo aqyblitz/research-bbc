@@ -298,14 +298,6 @@ void async_message(int clientId, void* userData)
 
             if(s->k == c.vertex_total)
             {	
-                cout << "\nDeinfinitizing the solution ..." << endl;
-                for(int x=0;x<solution.size();x++)
-                {
-                    if(solution[x]==INF)
-                        solution[x]=0;
-                }
-                print_solution();
-
                 s->state=-1;
                 return;
             }
@@ -354,6 +346,15 @@ void main_loop(void* userData)
     if(s->state==-1)
     {
         cout << "\nTERMINAL STATE | computation finished" << endl;
+        
+        cout << "\nDeinfinitizing the solution ..." << endl;
+        for(int x=0;x<solution.size();x++)
+        {
+          if(solution[x]==INF)
+            solution[x]=0;
+        }
+        print_solution();
+        
         cmd_vector.c=2;
         cmd_vector.data.clear();
         for(int j=0;j<c.block_total*c.red_mult;j++)
