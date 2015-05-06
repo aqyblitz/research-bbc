@@ -102,3 +102,72 @@ Server: `node server.js`
 Client: `node client.js`
 
 Computation on the problem does not begin until a sufficient number (i.e. the # of partitions of the adjacency matrix) of clients have connected to the server.
+
+=========
+#### Testing
+
+floydwarshall.py is a graph generator and solver. 
+
+##### Parameters
+It takes the following command line inputs (in order):
+
+`gen` - 1 to generate a new graph, 0 to use a generated graph with the given file name
+
+`filename` - name of the files to be generated, output files will be filename.in (input file), filename.test (input file for BBC), filename.out (solution), and filename.diff (file to diff with BBC output)
+
+`size` - number of vertices in the graph
+
+`int_only` - 1 for integer only edge weights, 0 for floating point
+
+`num_range` - range of the edge values to be generated, from (0, range value]
+
+`inf_val` - value to be used for infinity, use "inf" (no quotes) for floating point infinity
+
+`edge_prob` - number from [0,1] to determine likelihood of having an edge between two vertices
+
+`undirected` - 1 for an undirected graph, 0 for a directed graph
+
+##### Usage
+Run floydwarshall.py to generate a graph. An example run:
+
+`python floydwarshall.py 1 sample 5 1 1 inf .3 1`
+
+This yields four files, sample.in, sample.test, sample.out, and sample.diff:
+
+sample.in
+```
+0 1 1 inf inf
+1 0 inf 1 inf
+1 inf 0 inf inf
+inf 1 inf 0 inf
+inf inf inf inf 0
+```
+
+sample.test
+```
+0 1 1 0 0
+1 0 0 1 0
+1 0 0 0 0
+0 1 0 0 0
+0 0 0 0 0
+```
+
+sample.out
+```
+0 1 1 2 inf
+1 0 2 1 inf
+1 2 0 3 inf
+2 1 3 0 inf
+inf inf inf inf 0
+```
+
+sample.diff
+```
+0 1 1 2 0
+1 0 2 1 0
+1 2 0 3 0
+2 1 3 0 0
+0 0 0 0 0
+```
+
+Run the BBC implementation on sample.test by setting it as the `filePath` field in the serverConfig.json configuration file. Run diff on the output of BBC and the sample.diff file. If they match the BBC implementation of Floyd-Warshall ran correctly.
