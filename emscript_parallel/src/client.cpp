@@ -33,7 +33,6 @@ static void print_block();
 static void SendData   (const DataVector& d_vector);
 static void SendAckMsg (const AckMsg&     a_msg);
 static void relax      (vector<int32_t> &row_k, int k);
-bool check_source(int k);
 void error_callback(int fd, int err, const char* msg, void* userData);
 
 // Structs
@@ -54,7 +53,6 @@ typedef struct {
   int k;             // row being requested o relaxed w/ respect to
   int base_offset;   // base_offset
   int r_d;           // # of rows relaxed
-  bool isSource;     // whether or not this client node is the source node
 } StateVars;
 
 // Global variables
@@ -175,13 +173,15 @@ void async_message(int fd, void* userData)
                 data_vector.data=temp_data;
 
                 SendData(data_vector);
-                s->isSource = check_source(s->k);
-                if(s->isSource)
+                if(s->r_d != c.b_s/c.v_t) 
                 {
-                    relax(temp_data, s->k);
+                    relax(temp_data, s->k); // this relaxes the local data
+                    s->r_d++; // increment rows done TODO: front end
                 }
+
+                return;
             }
-            if(s->cmd_s==1 || s->isSource) // code=1, data received OR this is the source --> relax local data --> send ack
+            if(s->cmd_s==1) // code=1, data received OR this is the source --> relax local data --> send ack
             {
                 int ack_c;//=0; // 0 for failure
                 relax(cmd_vector.data, s->k); // this k-value will work for both cases
@@ -193,7 +193,8 @@ void async_message(int fd, void* userData)
                 ack_msg.id=c.id;
                 cout << "****** ACK | status=" << ack_msg.status << " | id=" << ack_msg.id << endl;
                 SendAckMsg(ack_msg);
-                s->isSource=false;
+                
+                return;
             }
             if(s->cmd_s==2) // code=2, shut down
             {
@@ -243,7 +244,6 @@ int main() {
 
   st.state=0;
   st.r_d=0;
-  st.isSource=false;
 
   memset(&server, 0, sizeof(server_t));
 
@@ -395,17 +395,6 @@ static void relax(vector<int32_t> &row_k, int k)
         }
     }
     cout << "**** Relaxation complete" << endl;
-}
-
-
-///////////////////////////////////////////////////////////////////////////////
-//
-// check_source
-//
-///////////////////////////////////////////////////////////////////////////////
-bool check_source(int k)
-{
-    return false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

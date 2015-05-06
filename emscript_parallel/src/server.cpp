@@ -234,7 +234,7 @@ void async_message(int clientId, void* userData)
             return;
         }
     }
-    if(s->state==3 && s->ack_count<c.block_total*c.red_mult)
+    if(s->state==3 && s->ack_count<c.block_total*c.red_mult-1)
     {
         unsigned int messageSize;
         if (ioctl(clientId, FIONREAD, &messageSize) != -1)
@@ -386,13 +386,15 @@ void main_loop(void* userData)
         for(int j=0;j<c.block_total*c.red_mult;j++)
         {
             // k remains at the value set in state 1
+            if( s->k/c.block_size==(j / c.red_mult) ) // this optimization reduces one transmission per broadcast row
+                continue;
             SendCmd(clients[j], cmd_vector); // data already read directly in
         }
         s->state=3;
         cout << "\nSTATE 3 | Counting completion messages" << endl;
         return;
     }
-    if(s->state==3 && s->ack_count==c.block_total*c.red_mult) // completed counting acknolwedge msgs
+    if(s->state==3 && s->ack_count==c.block_total*c.red_mult-1) // completed counting acknolwedge msgs
     {
         cout << "\nSTATE 3.5 | All completion messages received for row_k, k=" << cmd_vector.k << endl; 
         s->ack_count=0;
