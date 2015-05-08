@@ -34,32 +34,32 @@ using namespace std;
 // Structs
 typedef struct
 {
-  int fd;
-  string url;
+    int fd;
+    string url;
 } server_t;
 
 typedef struct
 {
-  int fd;
-  struct sockaddr_in addr;
+    int fd;
+    struct sockaddr_in addr;
 } client_t;
 
 typedef struct
 {
-  int        	   block_total; // # of distinct blocks
-  int        	   red_mult; // TODO: redundancy multiplier
-  int	               vertex_total; // # of vertices in graph
-  int                block_size; // # of vertices represented per block
-  vector<int32_t>    adj_matrix; // adjacency matrix
+    int        	     block_total; // # of distinct blocks
+    int                red_mult; // TODO: redundancy multiplier
+    int	           vertex_total; // # of vertices in graph
+    int                block_size; // # of vertices represented per block
+    vector<int32_t>    adj_matrix; // adjacency matrix
 } Constants;
 
 typedef struct
 {
-  int  state; // Encodes state
-  int  conn_count; // Counter for connections
-  int  k; // Current k
-  int  ack_count; // Counter for acknowledge messages
-  bool req_block; // Bool to block until row_k received
+    int                state; // Encodes state
+    int                conn_count; // Counter for connections
+    int                k; // Current k
+    int                ack_count; // Counter for acknowledge messages
+    bool               req_block; // Bool to block until row_k received
 } StateVars;  
 
 // Local function declarations
@@ -76,6 +76,9 @@ Constants          c;
 StateVars          st;
 fd_set             fdr;
 fd_set             fdw;
+
+bool               debug;
+int                cparam;
 
 vector<int32_t>    row_k;       // Stores the kth row.
 vector<int>        clients;     // TODO: Make this the map above. List of all client fd's.
@@ -94,35 +97,37 @@ AckMsg             ack_msg;    // For reading a command
 ///////////////////////////////////////////////////////////////////////////////
 void cleanup()
 {
-   cout << "cleanup() called" << endl;
+    if(debug)
+        cout << "cleanup() called" << endl;
 
-   //TODO: Update Cleanup
-   for(int i=0; i<clients.size(); i++)
-   {
-       if(clients[i])
-       {
-           close(client.fd);
-           client.fd = 0;
-       }
-   }
+    //TODO: Update Cleanup
+    for(int i=0; i<clients.size(); i++)
+    {
+        if(clients[i])
+        {
+            close(client.fd);
+            client.fd = 0;
+        }
+    }
 
-   if(server.fd)
-   {
+    if(server.fd)
+    {
       close(server.fd);
       server.fd = 0;
-  }
+    }
 }
+
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-// cleanup
+// cleanup - automatically called by signal
 //
 ///////////////////////////////////////////////////////////////////////////////
 void cleanup(int param)
 {
-   cout << "cleanup(int param) called" << endl;
+    cout << "cleanup(int param) called" << endl;
 
-   cleanup();
+    cleanup();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -137,11 +142,12 @@ void cleanup(int param)
 void async_connection(int clientId, void* userData)
 {
     StateVars* s = (StateVars*) userData;
-
-    cout << "SOCKET | CALLBACK | async_connection called by client | fd=" << clientId << endl;
+    if(debug)
+	    cout << "SOCKET | CALLBACK | async_connection called by client | fd=" << clientId << endl;
 
     if(s->state != 0) {
-        cout << "** Connection limit reached: no longer accepting connections" << endl;
+        if(debug)
+	        cout << "** Connection limit reached: no longer accepting connections" << endl;
         return;
     }
 
@@ -171,11 +177,13 @@ void async_connection(int clientId, void* userData)
         SendInit(clientId, init_vector);
         clients.push_back(clientId); // TODO: not fault-tolerant. make this a map later if you can!
 
-        cout << "** succesfully exchanged data with connecting client" << endl;
+        if(debug)
+            cout << "** succesfully exchanged data with connecting client" << endl;
 
         if(s->conn_count == c.red_mult*c.block_total) {
             s->state=1;
-            cout << "** connection capacity reached | beginning computation\n\n" << endl;
+            if(debug)
+                cout << "** connection capacity reached | beginning computation\n\n" << endl;
             return;
         }
         
@@ -199,15 +207,17 @@ void async_connection(int clientId, void* userData)
 void async_message(int clientId, void* userData)
 {
     StateVars* s = (StateVars*) userData;
-
-    cout << "SOCKET | CALLBACK | async_message called by client | fd=" << clientId << endl;
+   
+    if(debug)
+        cout << "SOCKET | CALLBACK | async_message called by client | fd=" << clientId << endl;
 
     if(s->state == 1 && s->req_block)
     { // Receive requested row, then transition to next state and send data out.
         unsigned int messageSize;
         if (ioctl(clientId, FIONREAD, &messageSize) != -1)
         {
-            cout << "READ | requested row_k size: " << messageSize << endl;
+            if(debug)
+                cout << "READ | requested row_k size: " << messageSize << endl;
             if(messageSize == 0)
                 return;
 
@@ -239,7 +249,8 @@ void async_message(int clientId, void* userData)
         unsigned int messageSize;
         if (ioctl(clientId, FIONREAD, &messageSize) != -1)
         {
-            cout << "READ | ack message size: " << messageSize << endl;
+            if(debug)
+                cout << "READ | ack message size: " << messageSize << endl;
             if(messageSize == 0)
                 return;
 
@@ -256,11 +267,13 @@ void async_message(int clientId, void* userData)
                 archive(ack_msg);
             }
 
-            cout << "** ack | status=" << ack_msg.status << " | id=" << ack_msg.id << endl;
+            if(debug)
+                cout << "** ack | status=" << ack_msg.status << " | id=" << ack_msg.id << endl;
             if(ack_msg.status == 1) // && block ID not acknowledged
             {
                 s->ack_count++;
-                cout << "** ack count incremented | ack_count=" << s->ack_count << endl;
+                if(debug)
+                    cout << "** ack count incremented | ack_count=" << s->ack_count << endl;
             }
         }        
     }
@@ -269,7 +282,8 @@ void async_message(int clientId, void* userData)
         unsigned int messageSize;
         if (ioctl(clientId, FIONREAD, &messageSize) != -1)
         {
-            cout << "READ | requested solution row size: " << messageSize << endl;
+            if(debug)
+                cout << "READ | requested solution row size: " << messageSize << endl;
             if(messageSize == 0)
                 return;
 
@@ -297,20 +311,23 @@ void async_message(int clientId, void* userData)
             s->req_block=false;
 
             if(s->k == c.vertex_total)
-            {	
-                cout << "\nDeinfinitizing the solution ..." << endl;
+            {
+                if(debug)
+                    cout << "\nDeinfinitizing the solution ..." << endl;
                 for(int x=0;x<solution.size();x++)
                 {
                     if(solution[x]==INF)
                         solution[x]=0;
                 }
-                print_solution();
+                if(c_param==0)
+                    print_solution();
                 
                 cmd_vector.c=2;
                 cmd_vector.data.clear();
                 for(int j=0;j<c.block_total*c.red_mult;j++)
                 {
-                    cout << "SEND | sending shutdown signal to attached client | fd=" << clients[j] << endl;	
+                    if(debug)
+                        cout << "SEND | sending shutdown signal to attached client | fd=" << clients[j] << endl;	
                     SendCmd(clients[j], cmd_vector);
                 }
                 
@@ -329,8 +346,9 @@ void async_message(int clientId, void* userData)
 void async_close(int clientId, void* userData)
 {
     StateVars* s = (StateVars*) userData;
-    cout << "SOCKET | CALLBACK | async_close called" << endl;
 
+    if(debug)
+        cout << "SOCKET | CALLBACK | async_close called" << endl;
     // Remove the clients file descriptors
     FD_CLR(clientId, &fdr);
     FD_CLR(clientId, &fdw);
@@ -340,7 +358,8 @@ void async_close(int clientId, void* userData)
         clients[distance(clients.begin(),p)]=0;
     }
 
-    printf("clientId: %d closed\n", clientId);
+    if(debug)
+        printf("clientId: %d closed\n", clientId);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -361,7 +380,8 @@ void main_loop(void* userData)
 
     if(s->state==-1)
     {
-        cout << "\nTERMINAL STATE | computation finished" << endl;
+        if(debug)
+            cout << "\nTERMINAL STATE | computation finished" << endl;
         cleanup();
         emscripten_force_exit(0);
     }
@@ -369,7 +389,8 @@ void main_loop(void* userData)
         return;
     if(s->state==1 && !s->req_block) // request row
     {
-        cout << "\nSTATE 1 | Requesting row_k, k=" << cmd_vector.k << endl;
+        if(debug)
+            cout << "\nSTATE 1 | Requesting row_k, k=" << cmd_vector.k << endl;
         s->req_block=true;
         cmd_vector.c=0; // request code
         cmd_vector.k=s->k;
@@ -379,7 +400,8 @@ void main_loop(void* userData)
     }
     if(s->state==2) // send row
     {   
-        cout << "\nSTATE 2 | Sending row_k, k=" << cmd_vector.k << endl;
+        if(debug)
+            cout << "\nSTATE 2 | Sending row_k, k=" << cmd_vector.k << endl;
         cmd_vector.c=1;
         cmd_vector.data=row_k;
 
@@ -391,19 +413,22 @@ void main_loop(void* userData)
             SendCmd(clients[j], cmd_vector); // data already read directly in
         }
         s->state=3;
-        cout << "\nSTATE 3 | Counting completion messages" << endl;
+        if(debug)
+            cout << "\nSTATE 3 | Counting completion messages" << endl;
         return;
     }
     if(s->state==3 && s->ack_count==c.block_total*c.red_mult-1) // completed counting acknolwedge msgs
     {
-        cout << "\nSTATE 3.5 | All completion messages received for row_k, k=" << cmd_vector.k << endl; 
+        if(debug)
+            cout << "\nSTATE 3.5 | All completion messages received for row_k, k=" << cmd_vector.k << endl; 
         s->ack_count=0;
  
         if(s->k==c.vertex_total-1)
         {
             s->state=4; // finish up
             s->k=0;
-            cout << "\nSTATE 4 | Computation finshed" << endl;
+            if(debug)
+                cout << "\nSTATE 4 | Computation finshed" << endl;
             return;
         }
         else
@@ -434,9 +459,12 @@ int main()
     // Local variables
     struct sockaddr_in addr;
     int res;
+    debug=DEBUG;
+    c_param=PARAM;
 
     // Initialize
-    cout << "Initializing..." << endl;
+    if(debug)
+        cout << "Initializing..." << endl;
 
     // Mount the data folder as a NODEFS instance inside of emscripten
     EM_ASM(
@@ -460,7 +488,8 @@ int main()
             }
             catch(int e)
             {
-                cout << "ERROR | Could not read enough lines from file" << endl;
+                if(debug)
+                    cout << "ERROR | Could not read enough lines from file" << endl;
                 emscripten_force_exit(0);
             }
 
@@ -481,7 +510,8 @@ int main()
     }
     else
     {
-        cout << "ERROR | File could not be loaded" << endl;
+        if(debug)
+            cout << "ERROR | File could not be loaded" << endl;
         emscripten_force_exit(0);
     }
 
@@ -578,13 +608,15 @@ int main()
 ///////////////////////////////////////////////////////////////////////////////
 static void SendInit(int clientId, const InitVector& i_vector)
 {
-    cout << "SEND | Sending client " << clientId << " initialization data" << endl;
+    if(debug)
+        cout << "SEND | Sending client " << clientId << " initialization data" << endl;
 
     int res;
 
     if (!FD_ISSET(clientId, &fdw))
     {
-        cout << "clientId " << clientId << " not set for writing." << endl;
+        if(debug)
+            cout << "clientId " << clientId << " not set for writing." << endl;
         return;
     }
 
@@ -603,7 +635,8 @@ static void SendInit(int clientId, const InitVector& i_vector)
         res = send(clientId, message, tmp.size(), 0);
 
         if (res == -1) {
-            cout << "ERROR: Exception thrown sending data to clientId " << clientId << endl;
+            if(debug)
+                cout << "ERROR: Exception thrown sending data to clientId " << clientId << endl;
             return;
         }
         else if (res == 0)
@@ -613,11 +646,13 @@ static void SendInit(int clientId, const InitVector& i_vector)
             return;
         }
 
-        cout << "** sent " << tmp.size() << " bytes to client " << clientId << endl;
+        if(debug)
+            cout << "** sent " << tmp.size() << " bytes to client " << clientId << endl;
     }
     catch (...)
     {
-        cout << "ERROR: could not serialize the node initialization data" << endl;
+        if(debug)
+            cout << "ERROR: could not serialize the node initialization data" << endl;
     }
 }
 
@@ -628,13 +663,15 @@ static void SendInit(int clientId, const InitVector& i_vector)
 ///////////////////////////////////////////////////////////////////////////////
 static void SendCmd(int clientId, const CmdVector& c_vector)
 {
-    cout << "SEND | SendCmd called | code=" << cmd_vector.c << " | k=" << cmd_vector.k << endl;
+    if(debug)
+        cout << "SEND | SendCmd called | code=" << cmd_vector.c << " | k=" << cmd_vector.k << endl;
 
     int res;
 
     if (!FD_ISSET(clientId, &fdw))
     {
-        cout << "clientId " << clientId << " not set for writing." << endl;
+        if(debug)
+            cout << "clientId " << clientId << " not set for writing." << endl;
         return;
     }
 
@@ -653,7 +690,8 @@ static void SendCmd(int clientId, const CmdVector& c_vector)
         res = send(clientId, message, tmp.size(), 0);
 
         if (res == -1) {
-            cout << "ERROR: Exception thrown sending data to clientId " << clientId << endl;
+            if(debug)
+                cout << "ERROR: Exception thrown sending data to clientId " << clientId << endl;
             return;
         }
         else if (res == 0)
@@ -663,11 +701,13 @@ static void SendCmd(int clientId, const CmdVector& c_vector)
             return;
         }
 
-        cout << "** sent " << tmp.size() << " bytes to client " << clientId << endl;
+        if(debug)
+            cout << "** sent " << tmp.size() << " bytes to client " << clientId << endl;
     }
     catch (...)
     {
-        cout << "ERROR: could not serialize the display data" << endl;
+        if(debug)
+            cout << "ERROR: could not serialize the display data" << endl;
     }
 }
 
