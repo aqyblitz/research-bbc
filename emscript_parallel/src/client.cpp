@@ -22,9 +22,6 @@
 
 #include "include/structs.h"
 
-// Definitions
-#define INF 1000
-
 // Namespace
 using namespace std;
 
@@ -32,7 +29,8 @@ using namespace std;
 static void print_block();
 static void SendData   (const DataVector& d_vector);
 static void SendAckMsg (const AckMsg&     a_msg);
-static void relax      (vector<int32_t> &row_k, int k);
+static void compute    (vector<int32_t> &row_k, int k);
+static vector<int32_t> generate_next_tab(vector<int32_t>& A, int v_t);
 void error_callback(int fd, int err, const char* msg, void* userData);
 
 // Structs
@@ -63,6 +61,7 @@ StateVars          st;
 bool               debug;
 int                c_param;
 vector<int32_t>    block; // data partition
+vector<int32_t>    next_tab; // table of the "next" vertices in shortest paths; used for path reconstruction
 
 InitVector         init_vector; // For receiving initialization data.
 CmdVector          cmd_vector;  // For receiving commands.
@@ -131,6 +130,8 @@ void async_message(int fd, void* userData)
             block=init_vector.data;
             c.b_s=block.size()/c.v_t;
 
+            if(c_param==1) // path reconstruction 
+                next_tab=generate_next_tab(block);
             if(debug)
                 print_block();  
         }
@@ -177,13 +178,19 @@ void async_message(int fd, void* userData)
             if(s->cmd_s==0) // code=0, data requested --> send it back
             {
                 // Send data.
-                vector<int32_t> temp_data(block.begin()+s->base_offset,block.begin()+s->base_offset+c.v_t);
+                vector<int32_t>::iterator start;
+                if(c_param==0) // TODO: assume parameter validation in server main
+                    start=block.begin();
+                if(c_param==1)
+                    start=next_tab.begin();
+
+                vector<int32_t> temp_data(start+s->base_offset,start+s->base_offset+c.v_t);
                 data_vector.data=temp_data;
 
                 SendData(data_vector);
-                if(s->r_d != c.b_s/c.v_t) 
+                if(s->r_d != c.b_s/c.v_t) // rows done == rows in local partition
                 {
-                    relax(temp_data, s->k); // this relaxes the local data
+                    compute(temp_data, s->k); // this relaxes the local data and is a step in path reconstruction
                     s->r_d++; // increment rows done TODO: front end
                 }
 
@@ -192,7 +199,7 @@ void async_message(int fd, void* userData)
             if(s->cmd_s==1) // code=1, data received OR this is the source --> relax local data --> send ack
             {
                 int ack_c;//=0; // 0 for failure
-                relax(cmd_vector.data, s->k); // this k-value will work for both cases
+                compute(cmd_vector.data, s->k); // this k-value will work for both cases
                 s->r_d++; // increment rows done TODO: front end
                 ack_c=1; // 1 for success
                 
@@ -391,7 +398,12 @@ static void SendAckMsg(const AckMsg& a_msg)
     }
 }
 
-static void relax(vector<int32_t> &row_k, int k)
+//////////////////////////////////////////////////////////////////////////////
+//
+// compute
+//
+///////////////////////////////////////////////////////////////////////////////
+static void compute(vector<int32_t> &row_k, int k)
 {
     if(debug)
         cout << "**** Relaxing data" << endl;
@@ -408,11 +420,37 @@ static void relax(vector<int32_t> &row_k, int k)
             if(block[i*c.v_t+k] == INF || row_k[j] == INF)
                 continue;
             if(block[ind] > comp_distance)
+            {
                 block[ind] = comp_distance;
+                next_tab[ind] = next_tab[i*c.v_t+k];
+            }
         }
     }
     if(debug)
         cout << "**** Relaxation complete" << endl;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// generate_next_tab
+//
+///////////////////////////////////////////////////////////////////////////////
+static vector<int32_t> generate_next_tab(vector<int32_t>& A)
+{
+    vector<int32_t> ret;
+    for(int i=0; i<A.size()/c.v_t; i++)
+    {
+        for(int j=0; j<c.v_t; j++)
+        {
+            if(A[i*v_t+j] == INF || A[i*v_t+j] == 0)
+                ret.push_back(-1);
+            else
+                ret.push_back(j);
+        }
+    }
+
+    printf("\n");
+    return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

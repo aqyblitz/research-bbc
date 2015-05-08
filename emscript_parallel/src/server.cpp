@@ -25,9 +25,6 @@
 // Project Includes
 #include "include/structs.h"
 
-// Definitions
-#define INF 100000
-
 // Namespaces
 using namespace std;
 
@@ -78,7 +75,7 @@ fd_set             fdr;
 fd_set             fdw;
 
 bool               debug;
-int                cparam;
+int                c_param;
 
 vector<int32_t>    row_k;       // Stores the kth row.
 vector<int>        clients;     // TODO: Make this the map above. List of all client fd's.
@@ -311,17 +308,7 @@ void async_message(int clientId, void* userData)
             s->req_block=false;
 
             if(s->k == c.vertex_total)
-            {
-                if(debug)
-                    cout << "\nDeinfinitizing the solution ..." << endl;
-                for(int x=0;x<solution.size();x++)
-                {
-                    if(solution[x]==INF)
-                        solution[x]=0;
-                }
-                if(c_param==0)
-                    print_solution();
-                
+            {   
                 cmd_vector.c=2;
                 cmd_vector.data.clear();
                 for(int j=0;j<c.block_total*c.red_mult;j++)
@@ -330,7 +317,7 @@ void async_message(int clientId, void* userData)
                         cout << "SEND | sending shutdown signal to attached client | fd=" << clients[j] << endl;	
                     SendCmd(clients[j], cmd_vector);
                 }
-                
+
                 s->state=-1;
                 return;
             }
@@ -382,6 +369,22 @@ void main_loop(void* userData)
     {
         if(debug)
             cout << "\nTERMINAL STATE | computation finished" << endl;
+        if(c_param==0)
+        {
+            if(debug)
+                cout << "\nDeinfinitizing the solution ..." << endl; 
+            for(int x=0;x<solution.size();x++)
+            {
+                if(solution[x]==INF)
+                    solution[x]=0;
+            }
+            print_solution();
+        }
+        if(c_param==1)
+        {
+            print_solution();
+        }
+  
         cleanup();
         emscripten_force_exit(0);
     }
