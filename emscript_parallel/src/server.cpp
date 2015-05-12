@@ -57,13 +57,21 @@ typedef struct
     int                k; // Current k
     int                ack_count; // Counter for acknowledge messages
     bool               req_block; // Bool to block until row_k received
-} StateVars;  
+} StateVars;
+
+typedef struct
+{
+    int                c_param;
+    int                id_param_a;
+    int                id_param_b;
+} SolveParams;
 
 // Local function declarations
-static void SendCmd (int clientId, const CmdVector&  c_vector);
-static void SendInit(int clientId, const InitVector& i_vector);
-static void print_solution();
+static void SendCmd               (int clientId, const CmdVector&  c_vector);
+static void SendInit              (int clientId, const InitVector& i_vector);
+static void print_solution        ();
 
+vector<int32_t> reconstruct_path  (const vector<int32_t>& next_tab, int A, int B);
 void main_loop();
 
 // Global variables
@@ -71,11 +79,11 @@ server_t           server;
 client_t           client;
 Constants          c;
 StateVars          st;
+SolveParams        sp;
 fd_set             fdr;
 fd_set             fdw;
 
 bool               debug;
-int                c_param;
 
 vector<int32_t>    row_k;       // Stores the kth row.
 vector<int>        clients;     // TODO: Make this the map above. List of all client fd's.
@@ -369,7 +377,7 @@ void main_loop(void* userData)
     {
         if(debug)
             cout << "\nTERMINAL STATE | computation finished" << endl;
-        if(c_param==0)
+        if(sp.c_param==0)
         {
             if(debug)
                 cout << "\nDeinfinitizing the solution ..." << endl; 
@@ -380,9 +388,23 @@ void main_loop(void* userData)
             }
             print_solution();
         }
-        if(c_param==1)
+        if(sp.c_param==1)
         {
-            print_solution();
+            cout << "Path from vertex id=" << sp.id_param_a << " to vertex id=" << sp.id_param_b << ": ";
+            vector<int32_t> path = reconstruct_path(solution, sp.id_param_a, sp.id_param_b);
+
+            if(path.size() == 0)
+            {
+                cout << " no such path exists";
+            }
+
+            for(int i=0; i<path.size(); i++)
+            {
+                cout << path[i];
+                if(i < path.size()-1)
+                    cout << " -> ";
+            }
+            cout << endl;
         }
   
         cleanup();
@@ -459,11 +481,20 @@ void main_loop(void* userData)
 ///////////////////////////////////////////////////////////////////////////////
 int main()
 {
+    // Compute parameter validation
+    if(PARAM < 0 || PARAM > 2)
+    {
+        cout << "ERROR | Compute parameter (c_param) is out of bounds. See README for usage." << endl;
+        emscripten_force_exit(0);
+    }
+
     // Local variables
     struct sockaddr_in addr;
     int res;
     debug=DEBUG;
-    c_param=PARAM;
+    sp.c_param=PARAM;
+    sp.id_param_a=IDPARAMA;
+    sp.id_param_b=IDPARAMB;
 
     // Initialize
     if(debug)
@@ -491,8 +522,7 @@ int main()
             }
             catch(int e)
             {
-                if(debug)
-                    cout << "ERROR | Could not read enough lines from file" << endl;
+                cout << "ERROR | Could not read enough lines from file" << endl;
                 emscripten_force_exit(0);
             }
 
@@ -513,8 +543,7 @@ int main()
     }
     else
     {
-        if(debug)
-            cout << "ERROR | File could not be loaded" << endl;
+        cout << "ERROR | File could not be loaded" << endl;
         emscripten_force_exit(0);
     }
 
@@ -712,6 +741,28 @@ static void SendCmd(int clientId, const CmdVector& c_vector)
         if(debug)
             cout << "ERROR: could not serialize the display data" << endl;
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// reconstruct_path
+//
+///////////////////////////////////////////////////////////////////////////////
+vector<int32_t> reconstruct_path(const vector<int32_t>& next_tab, int A, int B)
+{
+    vector<int32_t> path;
+    int ab = A*c.vertex_total+B;
+    if(next_tab[ab] == -1)
+        return path;
+    
+    path.push_back(A);
+    while(A != B)
+    {
+        A = next_tab[ab];
+        path.push_back(A);
+        ab = A*c.vertex_total+B;
+    }
+    return path;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

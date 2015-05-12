@@ -440,9 +440,6 @@ static void compute(vector<int32_t> &row_k, int k)
                 block[ij] = comp_distance;
                 if(c_param==1)
                 {
-                    print_next_tab();
-                    cout << "i(loc): " << i << " | j=" << j << " | k=" << k << endl;
-                    cout << "OLD NEXT: " << next_tab[ij] << " | NEW NEXT: " << next_tab[ik] << "\n" << endl;
                     next_tab[ij] = next_tab[ik];
                 }
             }

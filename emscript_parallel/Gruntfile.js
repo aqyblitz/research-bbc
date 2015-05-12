@@ -25,7 +25,7 @@ module.exports = function (grunt) {
             },
             server: {
                 cwd: 'src',
-                cmd: 'em++ server.cpp -o ../run/server.js -DINF=<%= pconfig.infinityVal %> -DPARAM=<%= pconfig.computeParam %> -DDEBUG=<%= config.debug %> -DFILE_PATH="\\"<%= config.filePath %>\\"" -DSOCKK=<%= config.socketPort %> -DBLOCK_TOTAL=<%= pconfig.blockTotal %> -DRED_MULT=<%= pconfig.redMult %> -DVERTEX_TOTAL=<%= pconfig.vertexTotal %> -I include/ -std=c++11 -s ALLOW_MEMORY_GROWTH=1'
+                cmd: 'em++ server.cpp -o ../run/server.js -DINF=<%= pconfig.infinityVal %> -DPARAM=<%= pconfig.computeParam %> -DIDPARAMA=<%= pconfig.idParamA %> -DIDPARAMB=<%= pconfig.idParamB %> -DDEBUG=<%= config.debug %> -DFILE_PATH="\\"<%= config.filePath %>\\"" -DSOCKK=<%= config.socketPort %> -DBLOCK_TOTAL=<%= pconfig.blockTotal %> -DRED_MULT=<%= pconfig.redMult %> -DVERTEX_TOTAL=<%= pconfig.vertexTotal %> -I include/ -std=c++11 -s ALLOW_MEMORY_GROWTH=1'
             }
         }
     });
