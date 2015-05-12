@@ -213,7 +213,7 @@ void async_message(int fd, void* userData)
             if(s->cmd_s==2) // code=2, request data for solution
             {
                 vector<int32_t>::iterator start;
-                if(c_param==0) // TODO: assume parameter validation in server main
+                if(c_param==0 || c_param==2) // TODO: assume parameter validation in server main
                     start=block.begin();
                 if(c_param==1)
                     start=next_tab.begin(); // send back NEXT 

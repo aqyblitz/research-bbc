@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <iostream>
 #include <vector>
+#include <queue> // for priority queue, heap
 #include <string>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -18,6 +19,7 @@
 #include <sys/stat.h>
 #include <sstream>
 #include <fstream>
+#include <cstdio>
 
 #include <chrono> // Used for testing
 #include <emscripten.h>
@@ -43,27 +45,28 @@ typedef struct
 
 typedef struct
 {
-    int        	     block_total; // # of distinct blocks
-    int                red_mult; // TODO: redundancy multiplier
-    int	           vertex_total; // # of vertices in graph
-    int                block_size; // # of vertices represented per block
-    vector<int32_t>    adj_matrix; // adjacency matrix
+    int        	     block_total;      // # of distinct blocks
+    int                red_mult;         // TODO: redundancy multiplier
+    int	           vertex_total;     // # of vertices in graph
+    int                block_size;       // # of vertices represented per block
+    vector<int32_t>    adj_matrix;       // adjacency matrix
 } Constants;
 
 typedef struct
 {
-    int                state; // Encodes state
-    int                conn_count; // Counter for connections
-    int                k; // Current k
-    int                ack_count; // Counter for acknowledge messages
-    bool               req_block; // Bool to block until row_k received
+    int                state;            // Encodes state
+    int                conn_count;       // Counter for connections
+    int                k;                // Current k
+    int                ack_count;        // Counter for acknowledge messages
+    bool               req_block;        // Bool to block until row_k received
 } StateVars;
 
 typedef struct
 {
-    int                c_param;
-    int                id_param_a;
-    int                id_param_b;
+    int                c_param;          // compute parameter; determines what "problem" is solved
+    int                id_param_a;       // vertex id, source for path reconstuction or most connected vertices
+    int                id_param_b;       // vertex id, used for destination vertex in path reconstruction
+    int                vert_ct;          // # of closest and farthest vertices searched for
 } SolveParams;
 
 // Local function declarations
@@ -219,6 +222,7 @@ void async_message(int clientId, void* userData)
     if(s->state == 1 && s->req_block)
     { // Receive requested row, then transition to next state and send data out.
         unsigned int messageSize;
+
         if (ioctl(clientId, FIONREAD, &messageSize) != -1)
         {
             if(debug)
@@ -406,7 +410,57 @@ void main_loop(void* userData)
             }
             cout << endl;
         }
-  
+        if(sp.c_param==2)
+        {
+            if(debug)
+                cout << "\nDeinfinitizing the solution ..." << endl; 
+            for(int x=0;x<solution.size();x++)
+            {
+                if(solution[x]==INF)
+                    solution[x]=0;
+            }
+
+            vector<int32_t> row;
+            int iter_offset = sp.id_param_a*c.vertex_total;
+            row.assign(&solution[0]+iter_offset, &solution[0]+iter_offset+c.vertex_total);
+
+            string row_str="";
+            row_str.append(to_string(sp.id_param_a));
+            row_str.append(" ");
+            for(int i=0; i<row.size(); i++)
+            {
+                row_str.append(to_string(row[i]));
+                if(i != row.size()-1)
+                    row_str.append(" ");               
+            }
+
+            // TODO: Use a heap/priority queue to make this MUCH faster. Only doing it this way because of the time crunch.
+            int res;
+            FILE* file = fopen("/data/vertex_row.txt", "w");
+            res = fwrite(row_str.c_str(), sizeof(char), row_str.length(), file);
+            fclose(file);
+            cout << "Row data written to /data/vertex_row.txt" << endl;
+
+            /*
+            cout << sp.vert_ct << " closest vertices (in increasing order wrt distance): ";
+            for(int i=0; i<closest.size(); i++)
+            {
+                cout << closest[i];
+                if(i < sp.vert_ct-1)
+                    cout << ", ";
+            }
+            cout << "\n" << endl;
+            cout << sp.vert_ct << " furthest vertices (in decreasing order wrt distance): ";
+            for(int i=0; i<farthest.size(); i++)
+            {
+                cout << farthest[i];
+                if(i < sp.vert_ct-1)
+                    cout << ", ";
+            }
+            cout << endl;
+            */
+        }
+
         cleanup();
         emscripten_force_exit(0);
     }
@@ -493,8 +547,27 @@ int main()
     int res;
     debug=DEBUG;
     sp.c_param=PARAM;
-    sp.id_param_a=IDPARAMA;
-    sp.id_param_b=IDPARAMB;
+    if(sp.c_param == 1)
+    {
+        if(PARAMA < 0 || PARAMA > VERTEX_TOTAL || PARAMB < 0 || PARAMB > VERTEX_TOTAL)
+        {
+            cout << "ERROR | PARAMA or PARAMB out of bounds. See README for usage." << endl;
+            emscripten_force_exit(0);
+        }    
+        sp.id_param_a=PARAMA;
+        sp.id_param_b=PARAMB;
+    }
+    if(sp.c_param == 2)
+    {
+        if(PARAMA < 0 || PARAMA > VERTEX_TOTAL || PARAMB < 0 || PARAMB > VERTEX_TOTAL-1)
+        {
+            cout << "ERROR | PARAMA or PARAMB out of bounds. See README for usage." << endl;
+            emscripten_force_exit(0);
+        }   
+        sp.id_param_a=PARAMA;
+        sp.vert_ct=PARAMB;
+    }
+
 
     // Initialize
     if(debug)
