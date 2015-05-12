@@ -26,12 +26,13 @@
 using namespace std;
 
 // Function signatures
-static void print_block();
-static void SendData   (const DataVector& d_vector);
-static void SendAckMsg (const AckMsg&     a_msg);
-static void compute    (vector<int32_t> &row_k, int k);
-static vector<int32_t> generate_next_tab(vector<int32_t>& A, int v_t);
-void error_callback(int fd, int err, const char* msg, void* userData);
+static void print_block                  ();
+static void print_next_tab               ();
+static void SendData                     (const DataVector& d_vector);
+static void SendAckMsg                   (const AckMsg&     a_msg);
+static void compute                      (vector<int32_t> &row_k, int k);
+static vector<int32_t> generate_next_tab (const vector<int32_t>& A);
+void error_callback                      (int fd, int err, const char* msg, void* userData);
 
 // Structs
 typedef struct {
@@ -89,6 +90,8 @@ void finish(int result) {
 //    - init_vector correctly assigned in server
 // State 1
 //    - 0 <= cmd_vector.c <= 2
+//
+// c_param must be correctly set, or "start" (address to begin reading from) won't be assigned
 //
 ///////////////////////////////////////////////////////////////////////////////
 void async_message(int fd, void* userData)
@@ -175,24 +178,19 @@ void async_message(int fd, void* userData)
                 cout << "** CMD | code=" << s->cmd_s << " | k=" << s->k << endl;
             s->base_offset=c.v_t*(s->k-(c.id*(int)ceil( (c.v_t*1.0)/c.b_t))); 
 
-            if(s->cmd_s==0) // code=0, data requested --> send it back
+            if(s->cmd_s==0) // code=0, row data requested --> send it back
             {
                 // Send data.
                 vector<int32_t>::iterator start;
-                if(c_param==0) // TODO: assume parameter validation in server main
-                    start=block.begin();
-                if(c_param==1)
-                    start=next_tab.begin();
+                start=block.begin();
 
+                // temp_data: holds a vector<int32_t> of row data to be transmitted.
                 vector<int32_t> temp_data(start+s->base_offset,start+s->base_offset+c.v_t);
                 data_vector.data=temp_data;
 
                 SendData(data_vector);
-                if(s->r_d != c.b_s/c.v_t) // rows done == rows in local partition
-                {
-                    compute(temp_data, s->k); // this relaxes the local data and is a step in path reconstruction
-                    s->r_d++; // increment rows done TODO: front end
-                }
+                compute(temp_data, s->k); // this relaxes the local data and is a step in path reconstruction
+                s->r_d++; // increment rows done TODO: front end
 
                 return;
             }
@@ -212,7 +210,21 @@ void async_message(int fd, void* userData)
                 
                 return;
             }
-            if(s->cmd_s==2) // code=2, shut down
+            if(s->cmd_s==2) // code=2, request data for solution
+            {
+                vector<int32_t>::iterator start;
+                if(c_param==0) // TODO: assume parameter validation in server main
+                    start=block.begin();
+                if(c_param==1)
+                    start=next_tab.begin(); // send back NEXT 
+
+                // temp_data: holds a vector<int32_t> of row data to be transmitted.
+                vector<int32_t> temp_data(start+s->base_offset,start+s->base_offset+c.v_t);
+                data_vector.data=temp_data;
+
+                SendData(data_vector);
+            }
+            if(s->cmd_s==3) // code=3, shut down
             {
                 finish(1); // TODO: exit codes
             }
@@ -401,28 +413,38 @@ static void SendAckMsg(const AckMsg& a_msg)
 //////////////////////////////////////////////////////////////////////////////
 //
 // compute
+//   - assume that the rows done (r_d) check against the rows in this block
+//     is stopping this from being called when it doesn't need to be
 //
 ///////////////////////////////////////////////////////////////////////////////
 static void compute(vector<int32_t> &row_k, int k)
 {
     if(debug)
         cout << "**** Relaxing data" << endl;
-    int ind;
+    int ij, ik;
     int comp_distance;
 
     for(int i=0;i<c.b_s;i++)
     {
+        ik=i*c.v_t+k;
         for(int j=0;j<c.v_t;j++)
         {
-            ind=i*c.v_t+j;
-            comp_distance = block[i*c.v_t+k]+row_k[j]; // a_ik+a_jk
-
-            if(block[i*c.v_t+k] == INF || row_k[j] == INF)
+            ij=i*c.v_t+j;
+            
+            if(block[ik] == INF || row_k[j] == INF)
                 continue;
-            if(block[ind] > comp_distance)
+
+            comp_distance = block[ik]+row_k[j]; // a_ik+a_kj
+            if(block[ij] > comp_distance)
             {
-                block[ind] = comp_distance;
-                next_tab[ind] = next_tab[i*c.v_t+k];
+                block[ij] = comp_distance;
+                if(c_param==1)
+                {
+                    print_next_tab();
+                    cout << "i(loc): " << i << " | j=" << j << " | k=" << k << endl;
+                    cout << "OLD NEXT: " << next_tab[ij] << " | NEW NEXT: " << next_tab[ik] << "\n" << endl;
+                    next_tab[ij] = next_tab[ik];
+                }
             }
         }
     }
@@ -433,23 +455,29 @@ static void compute(vector<int32_t> &row_k, int k)
 ///////////////////////////////////////////////////////////////////////////////
 //
 // generate_next_tab
+//   - assumes that c.v_t has been set
 //
 ///////////////////////////////////////////////////////////////////////////////
-static vector<int32_t> generate_next_tab(vector<int32_t>& A)
+static vector<int32_t> generate_next_tab(const vector<int32_t>& A)
 {
     vector<int32_t> ret;
     for(int i=0; i<A.size()/c.v_t; i++)
     {
         for(int j=0; j<c.v_t; j++)
         {
-            if(A[i*v_t+j] == INF || A[i*v_t+j] == 0)
+            if(A[i*c.v_t+j] == INF || A[i*c.v_t+j] == 0)
                 ret.push_back(-1);
-            else
+            else	
                 ret.push_back(j);
         }
     }
+    print_next_tab();
+    if(debug)
+    {
+        cout << "** NEXT table succesfully generated" << endl;
+        print_next_tab();
+    }
 
-    printf("\n");
     return ret;
 }
 
@@ -466,6 +494,23 @@ static void print_block()
         if(j!=0 && j%n==0)
             printf("\n");
         printf("%d ",block[j]);
+    }
+    printf("\n");
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// print_next_tab
+//
+///////////////////////////////////////////////////////////////////////////////
+static void print_next_tab()
+{
+    int n=c.v_t;
+    for(int j=0; j<next_tab.size(); j++)
+    {
+        if(j!=0 && j%n==0)
+            printf("\n");
+        printf("%d ",next_tab[j]);
     }
     printf("\n");
 }

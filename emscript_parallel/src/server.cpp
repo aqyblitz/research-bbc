@@ -309,7 +309,7 @@ void async_message(int clientId, void* userData)
 
             if(s->k == c.vertex_total)
             {   
-                cmd_vector.c=2;
+                cmd_vector.c=3;
                 cmd_vector.data.clear();
                 for(int j=0;j<c.block_total*c.red_mult;j++)
                 {
@@ -444,7 +444,7 @@ void main_loop(void* userData)
     if(s->state==4 && !s->req_block && s->k<c.vertex_total)
     {
         s->req_block=true;
-        cmd_vector.c=0; // request code
+        cmd_vector.c=2; // request code
         cmd_vector.k=s->k;
         cmd_vector.data.clear();
         
