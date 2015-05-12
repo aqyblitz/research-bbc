@@ -13,7 +13,12 @@
 typedef struct
 {
     // Variables
-    int32_t 			   c; // 0 for request, 1 for send
+    int32_t 			   c;
+    // Usage:
+    // - 0 for requesting a row for broadcast
+    // - 1 for sending a row (broadcasting it for computation)
+    // - 2 for retrieving rows for the solution
+    // - 3 for shutdown
     int32_t                      k; // relevant k value
     std::vector<int32_t>        data; // relevant command data
 

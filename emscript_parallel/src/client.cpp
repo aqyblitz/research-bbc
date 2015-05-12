@@ -48,7 +48,7 @@ typedef struct {
 
 typedef struct {
     int state;         // encodes overall state of client
-    int cmd_s;         // cmd state: 0 or 1
+    int cmd_s;         // cmd state: values range from 0-3. See struct.h for documentation.
     int k;             // row being requested o relaxed w/ respect to
     int base_offset;   // base_offset
     int r_d;           // # of rows relaxed
