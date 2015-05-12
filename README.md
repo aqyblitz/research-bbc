@@ -80,7 +80,7 @@ Compiling without the CLI:
 ##### Usage
 Note: The bug requiring an extra client to connect is not present in the Emscript’d code.
 
-There are two configuration files that contain information regarding the problem parameters and server parameters.
+There are two configuration files that contain information regarding the problem parameters and server parameters. These parameters are introduced to the system as macros at compile-time.
 
 ###### problemConfig.json
 `blockTotal`: the total number of blocks, and therefore partitions, the input adjacency matrix is split into.
@@ -89,10 +89,31 @@ There are two configuration files that contain information regarding the problem
 
 `vertexTotal`: the number of vertices in the input graph.
 
+`infinityVal`: the value to use for infinity.
+
+`computeParam`: a parameter that defines the behavior of the system.
+* `=0`: the "default" parameter; sets the system to solve for the all-pairs shortest-path matrix and output it.
+* `=1`: sets the client to generate and keep track of the "next" vertex and the server to output the path from some source vertex to a destination vertex.
+* `=2`: sets the server to write a vertex's row of shortest-path data to a file in /data/vertex_row.txt. For use with a Python file that will output the 5 closest/furthest vertices.
+
+`paramA`: a sub-parameter of computeParam. Its use and implications on the system's behavior vary based on `computeParam`'s value.
+* `computeParam=0`: N/A
+* `computeParam=1`: source vertex for path reconstruction
+* `computeParam=2`: source vertex for finding closest/furthest vertices (or row of the shortest-path matrix to write to file)
+
+`paramB`: a sub-parameter of computeParam. Its use and implications on the system's behavior vary based on `computeParam`'s value.
+* `computeParam=0`: N/A
+* `computeParam=1`: destination vertex for path reconstruction
+* `computeParam=2`: number of closest/furthest vertices to output. This parameter doesn't do anything. The original intent was to use a key, value priority queue/heap to make a faster implementation of finding the closest/furthest vertices, but was left out for the current code release.
+
 ###### serverConfig.json
 `socketPort`: the port on the server that is opened for clients to connect to.
 
 `host`: the client connects to the server at this IP address with `socketPort`.
+
+`filePath`: the file to read the input adjacency matrix from.
+
+`debug`: `0` to silence debug messages to stdout. `1` to not do so.
 
 ###### Running the code
 The JavaScript can be run from the `/run` directory.
