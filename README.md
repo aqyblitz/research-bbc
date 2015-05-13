@@ -192,3 +192,6 @@ sample.diff
 ```
 
 Run the BBC implementation on sample.test by setting it as the `filePath` field in the serverConfig.json configuration file. Run diff on the output of BBC and the sample.diff file. If they match the BBC implementation of Floyd-Warshall ran correctly.
+
+##### Marvel Universe Social Graph
+The input file is parser/socialgraph.txt. The program parser/parser.py takes this file as a command line argument and produces two files: marvel.in and marvel.test. The marvel.in file is for use with the python program floydwarshall.py. The marvel.test file is for use with the BBC implementation. Once generated, follow the instructions above to run it. The program parser/convert.py takes three command line parameters: the original socialgraph.txt, the row file outputed by the BBC implementation, and k = the number of closest/furtherst characters to output. 

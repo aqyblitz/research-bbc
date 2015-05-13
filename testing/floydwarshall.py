@@ -1,6 +1,7 @@
 import sys
 import random
 import math
+import copy
 
 def gengraph(size, int_only, num_range, inf_val, edge_prob, undirected):
   graph = []
@@ -43,15 +44,21 @@ def writegraph(graph, filename):
 
 def floydwarshall(graph, inf, int_only):
   dist = []
+  print('Generating distance graph...')
+  r = [float("inf")]*len(graph)
   for i in range(len(graph)):
-    dist.append([float("inf")]*len(graph))
+    print('Generating row '+str(i))
+    dist.append(copy.copy(r))
   for v in range(len(graph)):
     dist[v][v] = 0
+  l = str(len(graph))
   for u in range(len(graph)):
+    print('Updating distance values in row '+str(u))
     for v in range(len(graph)):
       if v != u and graph[u][v] < inf:
         dist[u][v] = graph[u][v]
   for k in range(len(graph)):
+    print('k='+str(k))
     for i in range(len(graph)):
       for j in range(len(graph)):
         if dist[i][j] > dist[i][k] + dist[k][j]:
@@ -67,8 +74,9 @@ def readgraph(filename):
   f = open(filename, 'r')
   s = f.readlines()
   graph = []
-  for line in s:
-    row = line.split(' ')
+  for i in range(len(s)):
+    print('Reading line '+str(i))
+    row = s[i].split(' ')
     row = map(float, row)
     graph.append(row)
   return graph  
@@ -80,7 +88,9 @@ def main(argv):
     writegraph(graph, filename+".in")
     writegraph(convertInf(graph, inf_val), filename+".test")
   else:
+    print('Reading graph...')
     graph = readgraph(filename+".in")
+  print('Running Floyd-Warshall algorithm...')
   solution = floydwarshall(graph, float(inf_val), int(int_only))
   writegraph(solution, filename+".out")
   writegraph(convertInf(solution, inf_val), filename+".diff")
