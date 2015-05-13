@@ -1,0 +1,9 @@
+{
+    "blockTotal" : 2,
+    "redMult" : 1,
+    "vertexTotal" : 5,
+    "infinityVal" : 100000,
+    "computeParam" : 2,
+    "paramA" : 0,
+    "paramB" : 2
+}
