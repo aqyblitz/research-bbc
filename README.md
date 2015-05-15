@@ -106,7 +106,7 @@ There are two configuration files that contain information regarding the problem
 * `computeParam=1`: destination vertex for path reconstruction
 * `computeParam=2`: number of closest/furthest vertices to output. This parameter doesn't do anything. The original intent was to use a key, value priority queue/heap to make a faster implementation of finding the closest/furthest vertices, but was left out for the current code release.
 
-###### serverConfig.json
+###### config.json
 `socketPort`: the port on the server that is opened for clients to connect to.
 
 `host`: the client connects to the server at this IP address with `socketPort`.
@@ -191,7 +191,7 @@ sample.diff
 0 0 0 0 0
 ```
 
-Run the BBC implementation on sample.test by setting it as the `filePath` field in the serverConfig.json configuration file. Run diff on the output of BBC and the sample.diff file. If they match the BBC implementation of Floyd-Warshall ran correctly.
+Run the BBC implementation on sample.test by setting it as the `filePath` field in the config.json configuration file. Run diff on the output of BBC and the sample.diff file. If they match the BBC implementation of Floyd-Warshall ran correctly.
 
 ##### Marvel Universe Social Graph
 The input file is parser/socialgraph.txt. The program parser/parser.py takes this file as a command line argument and produces two files: marvel.in and marvel.test. The marvel.in file is for use with the python program floydwarshall.py. The marvel.test file is for use with the BBC implementation. Once generated, follow the instructions above to run it. The program parser/convert.py takes three command line parameters: the original socialgraph.txt, the row file outputed by the BBC implementation, and k = the number of closest/furtherst characters to output. 
