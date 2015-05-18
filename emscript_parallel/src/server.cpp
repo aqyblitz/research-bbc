@@ -584,6 +584,7 @@ int main()
 
     ifstream file(file_path);
     string ln;
+
     if(file.is_open())
     {
         string temp=""; // for parsing numbers
@@ -599,13 +600,18 @@ int main()
                 emscripten_force_exit(0);
             }
 
+            int adj_row_count=0; // for loading paramets
             for(int i=0; i<ln.length(); i++)
             {
                 if(ln.at(i) == ' ')
                 {
                     c.adj_matrix.push_back( atoi(temp.c_str()) );
                     temp=""; // reset the number to feed into atoi
-                    continue;
+                    adj_row_count++; // increment vertex count for this row
+                    if(adj_row_count != VERTEX_TOTAL-1)
+                        continue;
+                    else
+                        break;
                 }
                 temp.append(1,ln.at(i));
             }
